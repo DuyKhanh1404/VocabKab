@@ -316,6 +316,13 @@ function loadProgress(){
   try{progressStore=JSON.parse(localStorage.getItem(PROGRESS_KEY)||"{}")}catch{progressStore={}}
   if(!progressStore||typeof progressStore!=="object")progressStore={};
 }
+// Trả về dữ liệu tiến độ của một file. Tạo object rỗng nếu file chưa có tiến độ.
+// Hàm này được dùng bởi fileCard(), renderFlash() và các bài luyện tập.
+function progressFor(id){
+  if(!id)return {};
+  if(!progressStore[id] || typeof progressStore[id] !== "object") progressStore[id]={};
+  return progressStore[id];
+}
 function saveProgress(){
   localStorage.setItem(PROGRESS_KEY,JSON.stringify(progressStore));
   scheduleCloudSync();
