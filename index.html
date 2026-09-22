@@ -133,9 +133,7 @@ input,select{max-width:100%}
 <header><div class="header-inner">
   <h1>📚 VocabKab</h1><p>Học từ vựng theo từng file/chủ đề — Flashcard, Quiz, Điền từ và Nhìn từ → Viết nghĩa</p>
 </div><div class="auth-bar">
-  <span id="authStatus" class="auth-status"><span class="sync-dot"></span>Chưa đăng nhập — dữ liệu cục bộ</span>
-  <button id="loginBtn" class="btn secondary">☁️ Đăng nhập Google</button>
-  <button id="logoutBtn" class="btn secondary hidden">Đăng xuất</button>
+  <span id="authStatus" class="auth-status"><span class="sync-dot"></span>Đang kết nối đồng bộ…</span>
 </div>
 </div></header>
 
@@ -327,26 +325,13 @@ function saveProgress(){
   localStorage.setItem(PROGRESS_KEY,JSON.stringify(progressStore));
   scheduleCloudSync();
 }
-
-
-function recordActivity(kind,completed=false){
-  if(!activeFileId)return;
-  const state=progressFor(activeFileId);
-  const data=kind==="quiz"?quiz:kind==="fill"?fill:recall;
-  if(!state[kind]||typeof state[kind]!=="object")state[kind]={};
-  state[kind].score=data.score;
-  state[kind].answered=data.answers.length;
-  state[kind].total=data.items.length;
-  state[kind].lastPercent=data.items.length?Math.round(data.score/data.items.length*100):0;
-  state[kind].updatedAt=new Date().toISOString();
-  if(completed)state[kind].attempts=(state[kind].attempts||0)+1;
-  saveProgress();
-}
-
 let cloudTimer=null;
+let cloudWriteToken=0;
+
 function scheduleCloudSync(){
   if(!cloud.enabled||!cloud.ready||!cloud.user)return;
-  clearTimeout(cloudTimer);cloudTimer=setTimeout(()=>syncToCloud(),500);
+  clearTimeout(cloudTimer);
+  cloudTimer=setTimeout(()=>syncToCloud(),450);
 }
 function setAuthStatus(text,state=""){
   const el=$("authStatus");if(!el)return;
@@ -355,106 +340,141 @@ function setAuthStatus(text,state=""){
 function firebaseConfigured(){
   return !!(window.FIREBASE_CONFIG&&window.FIREBASE_CONFIG.apiKey&&window.FIREBASE_CONFIG.projectId);
 }
+function cloudDataRef(){
+  return cloud.db.collection("users").doc(cloud.user.uid).collection("data").doc("main");
+}
+function localDataPayload(){
+  return {
+    files:Array.isArray(db.files)?db.files:[],
+    progress:(progressStore&&typeof progressStore==="object")?progressStore:{},
+    theme:localStorage.getItem(THEME_KEY)||"purple",
+    schemaVersion:2,
+    updatedAt:firebase.firestore.FieldValue.serverTimestamp()
+  };
+}
+function applyCloudPayload(data){
+  if(!data||typeof data!=="object")return false;
+  if(Array.isArray(data.files))db.files=data.files.filter(f=>f&&f.id&&f.name&&Array.isArray(f.words));
+  if(data.progress&&typeof data.progress==="object")progressStore=data.progress;
+  if(data.theme){
+    localStorage.setItem(THEME_KEY,data.theme);
+    applyTheme(data.theme,false);
+  }
+  localStorage.setItem(DB_KEY,JSON.stringify(db));
+  localStorage.setItem(PROGRESS_KEY,JSON.stringify(progressStore));
+  renderAll();
+  return true;
+}
+async function migrateLegacyCloud(){
+  const userRef=cloud.db.collection("users").doc(cloud.user.uid);
+  const target=cloudDataRef();
+  const existing=await target.get();
+  if(existing.exists&&existing.data())return existing.data();
+
+  // Tương thích với cấu trúc cloud cũ của ứng dụng.
+  const [filesSnap,progSnap,settingsSnap]=await Promise.all([
+    userRef.collection("vocabFiles").get(),
+    userRef.collection("meta").doc("progress").get(),
+    userRef.collection("meta").doc("settings").get()
+  ]);
+  const legacyFiles=filesSnap.docs.map(d=>d.data()).filter(f=>f&&f.id);
+  const legacyProgress=progSnap.exists&&progSnap.data().data&&typeof progSnap.data().data==="object"?progSnap.data().data:{};
+  const legacyTheme=settingsSnap.exists&&settingsSnap.data().theme?settingsSnap.data().theme:null;
+  if(legacyFiles.length||Object.keys(legacyProgress).length||legacyTheme){
+    const payload={
+      files:legacyFiles.length?legacyFiles:db.files,
+      progress:Object.keys(legacyProgress).length?legacyProgress:progressStore,
+      theme:legacyTheme||localStorage.getItem(THEME_KEY)||"purple",
+      schemaVersion:2,
+      updatedAt:firebase.firestore.FieldValue.serverTimestamp()
+    };
+    await target.set(payload,{merge:true});
+    return payload;
+  }
+  return null;
+}
 async function syncToCloud(){
   if(!cloud.enabled||!cloud.ready||!cloud.user||cloud.syncing)return;
-  cloud.syncing=true;setAuthStatus("Đang đồng bộ…");
+  cloud.syncing=true;
+  const token=++cloudWriteToken;
+  setAuthStatus("Đang đồng bộ…");
   try{
-    const userRef=cloud.db.collection("users").doc(cloud.user.uid);
-    const filesRef=userRef.collection("vocabFiles");
-    const existing=await filesRef.get();
-    const localIds=new Set(db.files.map(f=>f.id));
-    const ops=[];
-    existing.forEach(d=>{if(!localIds.has(d.id))ops.push({type:"delete",ref:d.ref})});
-    db.files.forEach(f=>ops.push({type:"set",ref:filesRef.doc(f.id),data:f}));
-    for(let i=0;i<ops.length;i+=450){
-      const batch=cloud.db.batch();
-      ops.slice(i,i+450).forEach(op=>op.type==="delete"?batch.delete(op.ref):batch.set(op.ref,op.data));
-      await batch.commit();
-    }
-    await userRef.collection("meta").doc("progress").set({data:progressStore,updatedAt:firebase.firestore.FieldValue.serverTimestamp()});
-    await userRef.collection("meta").doc("settings").set({theme:localStorage.getItem(THEME_KEY)||"purple",updatedAt:firebase.firestore.FieldValue.serverTimestamp()});
-    setAuthStatus(`Đã đồng bộ: ${cloud.user.displayName||cloud.user.email||"Tài khoản"}`,"online");
-  }catch(e){console.error(e);setAuthStatus("Đồng bộ lỗi — vẫn giữ dữ liệu cục bộ","error")}
-  finally{cloud.syncing=false}
+    await cloudDataRef().set(localDataPayload(),{merge:true});
+    if(token===cloudWriteToken)setAuthStatus("Đã đồng bộ tự động","online");
+  }catch(e){
+    console.error("Cloud sync",e);
+    setAuthStatus("Lỗi đồng bộ — vẫn giữ dữ liệu trên thiết bị","error");
+  }finally{cloud.syncing=false}
 }
-async function mergeCloudIntoLocal(){
-  const userRef=cloud.db.collection("users").doc(cloud.user.uid);
-  const snap=await userRef.collection("vocabFiles").get();
-  const cloudFiles=snap.docs.map(d=>d.data()).filter(f=>f&&f.id);
-  if(cloudFiles.length) {
-    const byId=new Map(db.files.map(f=>[f.id,f]));
-    cloudFiles.forEach(f=>byId.set(f.id,f));
-    db.files=[...byId.values()];
-    localStorage.setItem(DB_KEY,JSON.stringify(db));
-  }
-  const prog=await userRef.collection("meta").doc("progress").get();
-  if(prog.exists&&prog.data().data){
-    progressStore={...progressStore,...prog.data().data};
-    localStorage.setItem(PROGRESS_KEY,JSON.stringify(progressStore));
-  }
-  const settings=await userRef.collection("meta").doc("settings").get();
-  if(settings.exists&&settings.data().theme){
-    localStorage.setItem(THEME_KEY,settings.data().theme);
-    applyTheme(settings.data().theme,false);
-  }
-  renderAll();
-}
-function startCloudListeners(){
+function startCloudListener(){
   if(!cloud.user)return;
-  const userRef=cloud.db.collection("users").doc(cloud.user.uid);
   if(cloud.unsubscribe)cloud.unsubscribe();
-  const unFiles=userRef.collection("vocabFiles").onSnapshot(snap=>{
-    const remote=snap.docs.map(d=>d.data()).filter(f=>f&&f.id);
-    if(remote.length || snap.empty){
-      db.files=remote;
-      localStorage.setItem(DB_KEY,JSON.stringify(db));
-      renderAll();
+  const ref=cloudDataRef();
+  cloud.unsubscribe=ref.onSnapshot(snap=>{
+    if(!snap.exists){
+      setAuthStatus("Đang khởi tạo dữ liệu đồng bộ…");
+      return;
     }
-  },err=>console.error("Cloud files listener",err));
-  const unProgress=userRef.collection("meta").doc("progress").onSnapshot(snap=>{
-    if(snap.exists&&snap.data().data){
-      progressStore=snap.data().data;
-      localStorage.setItem(PROGRESS_KEY,JSON.stringify(progressStore));
-      renderAll();
-    }
-  },err=>console.error("Cloud progress listener",err));
-  const unSettings=userRef.collection("meta").doc("settings").onSnapshot(snap=>{
-    const theme=snap.exists?snap.data().theme:null;
-    if(theme){localStorage.setItem(THEME_KEY,theme);applyTheme(theme,false);}
-  },err=>console.error("Cloud settings listener",err));
-  cloud.unsubscribe=()=>{unFiles();unProgress();unSettings()};
+    const data=snap.data()||{};
+    applyCloudPayload(data);
+    setAuthStatus("Đã đồng bộ tự động","online");
+  },err=>{
+    console.error("Cloud listener",err);
+    setAuthStatus("Không thể nghe đồng bộ thời gian thực","error");
+  });
 }
-
 async function initCloud(){
   if(!firebaseConfigured()){
-    setAuthStatus("Chưa cấu hình Firebase — dữ liệu cục bộ");
-    $("loginBtn").classList.add("hidden");return;
+    setAuthStatus("Firebase chưa được cấu hình — chỉ lưu cục bộ","error");
+    return;
   }
   try{
-    firebase.initializeApp(window.FIREBASE_CONFIG);
-    cloud.enabled=true;cloud.db=firebase.firestore();cloud.auth=firebase.auth();
+    if(!firebase.apps.length)firebase.initializeApp(window.FIREBASE_CONFIG);
+    cloud.enabled=true;
+    cloud.db=firebase.firestore();
+    cloud.auth=firebase.auth();
     cloud.db.enablePersistence({synchronizeTabs:true}).catch(e=>console.warn("Firestore offline persistence:",e.code||e.message));
+
     cloud.auth.onAuthStateChanged(async user=>{
-      cloud.user=user;cloud.ready=!!user;
-      $("loginBtn").classList.toggle("hidden",!!user);
-      $("logoutBtn").classList.toggle("hidden",!user);
-      if(user){await mergeCloudIntoLocal();await syncToCloud();startCloudListeners();setAuthStatus(`Đã đăng nhập: ${user.displayName||user.email||"Google"}`,"online")}
-      else {if(cloud.unsubscribe)cloud.unsubscribe();cloud.unsubscribe=null;setAuthStatus("Chưa đăng nhập — dữ liệu cục bộ");}
+      cloud.user=user;
+      cloud.ready=!!user;
+      if(cloud.unsubscribe){cloud.unsubscribe();cloud.unsubscribe=null;}
+      if(!user){
+        setAuthStatus("Đang cấp tài khoản đồng bộ tự động…");
+        try{
+          await cloud.auth.signInAnonymously();
+        }catch(e){
+          console.error("Anonymous auth",e);
+          setAuthStatus("Không thể tự đăng nhập ẩn danh — chỉ lưu cục bộ","error");
+        }
+        return;
+      }
+      try{
+        setAuthStatus("Đang tải dữ liệu đồng bộ…");
+        startCloudListener();
+        const migrated=await migrateLegacyCloud();
+        if(migrated){
+          applyCloudPayload(migrated);
+        }else{
+          const snap=await cloudDataRef().get();
+          if(snap.exists&&snap.data()){
+            applyCloudPayload(snap.data());
+          }else{
+            await syncToCloud();
+          }
+        }
+        setAuthStatus("Đã đồng bộ tự động","online");
+      }catch(e){
+        console.error("Cloud init",e);
+        setAuthStatus("Đồng bộ chưa sẵn sàng — vẫn giữ dữ liệu cục bộ","error");
+      }
     });
-  }catch(e){console.error(e);setAuthStatus("Firebase chưa sẵn sàng — dữ liệu cục bộ","error")}
-}
-$("loginBtn").onclick=async()=>{
-  if(!cloud.auth){showMessage("Firebase chưa được cấu hình.","err");return}
-  const provider=new firebase.auth.GoogleAuthProvider();
-  try{
-    await cloud.auth.signInWithPopup(provider);
   }catch(e){
-    console.warn("Popup auth failed, trying redirect:",e);
-    try{await cloud.auth.signInWithRedirect(provider)}
-    catch(e2){showMessage("Đăng nhập thất bại: "+(e2.message||e.message),"err")}
+    console.error(e);
+    setAuthStatus("Firebase chưa sẵn sàng — chỉ lưu cục bộ","error");
   }
-};
-$("logoutBtn").onclick=async()=>{try{await cloud.auth.signOut()}catch(e){showMessage("Không thể đăng xuất: "+e.message,"err")}};
+}
+
 function fileById(id){return db.files.find(f=>f.id===id)||null}
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 
