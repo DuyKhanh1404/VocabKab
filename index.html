@@ -342,6 +342,19 @@ function saveProgress(){
   localStorage.setItem(PROGRESS_KEY,JSON.stringify(progressStore));
   scheduleCloudSync();
 }
+function recordActivity(kind,completed=false){
+  if(!activeFileId)return;
+  const state=progressFor(activeFileId);
+  const data=kind==="quiz"?quiz:kind==="fill"?fill:recall;
+  if(!state[kind]||typeof state[kind]!=="object")state[kind]={};
+  state[kind].score=data.score;
+  state[kind].answered=data.answers.length;
+  state[kind].total=data.items.length;
+  state[kind].lastPercent=data.items.length?Math.round(data.score/data.items.length*100):0;
+  state[kind].updatedAt=new Date().toISOString();
+  if(completed)state[kind].attempts=(state[kind].attempts||0)+1;
+  saveProgress();
+}
 let cloudTimer=null;
 let cloudWriteToken=0;
 let authActionBusy=false;
