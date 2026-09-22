@@ -11,11 +11,10 @@
 <link rel="apple-touch-icon" href="./icons/icon-192.png">
 <title>VocabKab — Vocabulary Learning</title>
 <script src="https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js"></script>
-<!-- Firebase: cấu hình thật ở firebase-config.js; có thể để app chạy local-only nếu chưa cấu hình -->
+<!-- Firebase Compat SDK: dùng chung một kiểu SDK, không trộn ES Module import. -->
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
-<script src="./firebase-config.js"></script>
 <style>
 :root{
   --primary:#4f46e5;--primary2:#7c3aed;--bg:#f5f7fb;--card:#fff;--text:#1f2937;
@@ -272,6 +271,20 @@ input,select{max-width:100%}
 <script>
 "use strict";
 
+/* Firebase Web App config.
+   Đây là cấu hình client-side công khai của Firebase Web App.
+   Security phải được bảo vệ bằng Authentication + Firestore Security Rules.
+*/
+window.FIREBASE_CONFIG = {
+  apiKey: "AIzaSyAy9hFpz8dOYxrUJ0nvuDQ0bGFbrLf5IWg",
+  authDomain: "vocabkab.firebaseapp.com",
+  projectId: "vocabkab",
+  storageBucket: "vocabkab.firebasestorage.app",
+  messagingSenderId: "634186914698",
+  appId: "1:634186914698:web:1da78d0bd8955e49100673",
+  measurementId: "G-2CR7GYJWZN"
+};
+
 const DB_KEY="vocabKabExercises_v2", THEME_KEY="vocabKabTheme_v2", PROGRESS_KEY="vocabKabProgress_v2";
 const SETTINGS_KEY="vocabKabSettings_v1";
 let progressStore={}, cloud={enabled:false,ready:false,syncing:false,user:null,unsubscribe:null};
@@ -408,8 +421,15 @@ async function initCloud(){
   }catch(e){console.error(e);setAuthStatus("Firebase chưa sẵn sàng — dữ liệu cục bộ","error")}
 }
 $("loginBtn").onclick=async()=>{
-  try{await cloud.auth.signInWithPopup(new firebase.auth.GoogleAuthProvider())}
-  catch(e){showMessage("Đăng nhập thất bại: "+e.message,"err")}
+  if(!cloud.auth){showMessage("Firebase chưa được cấu hình.","err");return}
+  const provider=new firebase.auth.GoogleAuthProvider();
+  try{
+    await cloud.auth.signInWithPopup(provider);
+  }catch(e){
+    console.warn("Popup auth failed, trying redirect:",e);
+    try{await cloud.auth.signInWithRedirect(provider)}
+    catch(e2){showMessage("Đăng nhập thất bại: "+(e2.message||e.message),"err")}
+  }
 };
 $("logoutBtn").onclick=async()=>{try{await cloud.auth.signOut()}catch(e){showMessage("Không thể đăng xuất: "+e.message,"err")}};
 function fileById(id){return db.files.find(f=>f.id===id)||null}
@@ -689,7 +709,10 @@ renderManageGrid=renderManageGridWithMerge;
 
 function applyTheme(t,sync=true){
   document.documentElement.dataset.theme=t==="purple"?"":t;
-  localStorage.setItem(THEME_KEY,t);document.querySelectorAll(".theme-btn").forEach(b=>b.classList.toggle("active",b.dataset.themeChoice===t));updateThemeLabel();
+  localStorage.setItem(THEME_KEY,t);
+  document.querySelectorAll(".theme-btn").forEach(b=>b.classList.toggle("active",b.dataset.themeChoice===t));
+  updateThemeLabel();
+  if(sync) scheduleCloudSync();
 }
 function updateThemeLabel(){$("themeLabel").textContent=localStorage.getItem(THEME_KEY)||"purple"}
 document.querySelectorAll(".theme-btn").forEach(b=>b.onclick=()=>applyTheme(b.dataset.themeChoice));
@@ -710,27 +733,19 @@ renderAll();
   initCloud();
   if("serviceWorker" in navigator) navigator.serviceWorker.register("./sw.js").catch(console.warn);
 })();
-// Import the functions you need from the SDKs you need
-import { initializeApp } from "firebase/app";
-import { getAnalytics } from "firebase/analytics";
-// TODO: Add SDKs for Firebase products that you want to use
-// https://firebase.google.com/docs/web/setup#available-libraries
-
-// Your web app's Firebase configuration
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
-const firebaseConfig = {
-  apiKey: "AIzaSyAy9hFpz8dOYxrUJ0nvuDQ0bGFbrLf5IWg",
-  authDomain: "vocabkab.firebaseapp.com",
-  projectId: "vocabkab",
-  storageBucket: "vocabkab.firebasestorage.app",
-  messagingSenderId: "634186914698",
-  appId: "1:634186914698:web:1da78d0bd8955e49100673",
-  measurementId: "G-2CR7GYJWZN"
-};
-
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-const analytics = getAnalytics(app);
+</script>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js')
+        .then((registration) => {
+          console.log('Service Worker đăng ký thành công với scope: ', registration.scope);
+        })
+        .catch((error) => {
+          console.log('Service Worker đăng ký thất bại: ', error);
+        });
+    });
+  }
 </script>
 </body>
 </html>
