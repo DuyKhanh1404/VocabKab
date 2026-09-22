@@ -124,16 +124,33 @@ input,select{max-width:100%}
   #detailBody{font-size:13px}
 }
 .auth-bar{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:12px;flex-wrap:wrap}
-.auth-status{font-size:13px;opacity:.95}
+.auth-status{font-size:13px;opacity:.95;display:flex;align-items:center}
+.auth-panel{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+.auth-input{width:150px;border:1px solid rgba(255,255,255,.28);background:rgba(255,255,255,.12);color:#fff;border-radius:9px;padding:9px 10px;outline:none}
+.auth-input::placeholder{color:rgba(255,255,255,.78)}
+.auth-btn,.logout-btn{border:0;border-radius:9px;padding:9px 11px;font-weight:700;cursor:pointer;font-size:13px}
+.auth-btn.login{background:#fff;color:#202124}.auth-btn.register{background:rgba(255,255,255,.14);color:#fff;border:1px solid rgba(255,255,255,.25)}
+.logout-btn{background:rgba(255,255,255,.1);color:inherit;border:1px solid rgba(255,255,255,.18)}
+.auth-user{display:none;font-size:13px;font-weight:700;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.auth-user.show{display:block}
 .sync-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#fbbf24;margin-right:5px}
 .sync-dot.online{background:#4ade80}.sync-dot.error{background:#f87171}
+@media(max-width:750px){.auth-bar{justify-content:flex-start}.auth-panel{width:100%}.auth-input{flex:1;min-width:130px}.auth-btn{flex:1}.auth-status{width:100%}}
 </style>
 </head>
 <body>
 <header><div class="header-inner">
   <h1>📚 VocabKab</h1><p>Học từ vựng theo từng file/chủ đề — Flashcard, Quiz, Điền từ và Nhìn từ → Viết nghĩa</p>
 </div><div class="auth-bar">
-  <span id="authStatus" class="auth-status"><span class="sync-dot"></span>Đang kết nối đồng bộ…</span>
+  <div id="authPanel" class="auth-panel">
+    <input id="authEmail" class="auth-input" type="email" autocomplete="email" placeholder="Email">
+    <input id="authPassword" class="auth-input" type="password" autocomplete="current-password" placeholder="Mật khẩu">
+    <button id="emailLoginBtn" class="auth-btn login" type="button">🔐 Đăng nhập</button>
+    <button id="emailRegisterBtn" class="auth-btn register" type="button">📝 Đăng ký tài khoản mới</button>
+  </div>
+  <span id="authUser" class="auth-user"></span>
+  <span id="authStatus" class="auth-status"><span class="sync-dot"></span>Chưa đăng nhập — dữ liệu chỉ lưu trên thiết bị</span>
+  <button id="emailLogoutBtn" class="logout-btn" type="button" hidden>Đăng xuất</button>
 </div>
 </div></header>
 
@@ -327,152 +344,123 @@ function saveProgress(){
 }
 let cloudTimer=null;
 let cloudWriteToken=0;
-
-function scheduleCloudSync(){
-  if(!cloud.enabled||!cloud.ready||!cloud.user)return;
-  clearTimeout(cloudTimer);
-  cloudTimer=setTimeout(()=>syncToCloud(),450);
+let authActionBusy=false;
+let authReadyResolve=null;
+function scheduleCloudSync(){if(!cloud.enabled||!cloud.ready||!cloud.user||cloud.syncing)return;clearTimeout(cloudTimer);cloudTimer=setTimeout(()=>syncToCloud(),450)}
+function setAuthStatus(text,state=""){const el=$("authStatus");if(!el)return;el.innerHTML=`<span class="sync-dot ${state}"></span>${escapeHtml(text)}`}
+function updateAuthUI(user){
+  const panel=$("authPanel"),userBox=$("authUser"),logoutBtn=$("emailLogoutBtn");
+  if(!panel||!userBox||!logoutBtn)return;
+  if(user){panel.hidden=true;userBox.classList.add("show");userBox.textContent=`Đang đăng nhập: ${user.email||user.uid}`;logoutBtn.hidden=false}
+  else{panel.hidden=false;userBox.classList.remove("show");userBox.textContent="";logoutBtn.hidden=true}
 }
-function setAuthStatus(text,state=""){
-  const el=$("authStatus");if(!el)return;
-  el.innerHTML=`<span class="sync-dot ${state}"></span>${escapeHtml(text)}`;
-}
-function firebaseConfigured(){
-  return !!(window.FIREBASE_CONFIG&&window.FIREBASE_CONFIG.apiKey&&window.FIREBASE_CONFIG.projectId);
-}
-function cloudDataRef(){
-  return cloud.db.collection("users").doc(cloud.user.uid).collection("data").doc("main");
-}
-function localDataPayload(){
-  return {
-    files:Array.isArray(db.files)?db.files:[],
-    progress:(progressStore&&typeof progressStore==="object")?progressStore:{},
-    theme:localStorage.getItem(THEME_KEY)||"purple",
-    schemaVersion:2,
-    updatedAt:firebase.firestore.FieldValue.serverTimestamp()
-  };
-}
+function firebaseConfigured(){return !!(window.FIREBASE_CONFIG&&window.FIREBASE_CONFIG.apiKey&&window.FIREBASE_CONFIG.projectId)}
+function cloudDataRef(){return cloud.db.collection("users").doc(cloud.user.uid).collection("vocab_data").doc("main")}
+function localDataPayload(){return {files:Array.isArray(db.files)?db.files:[],progress:(progressStore&&typeof progressStore==="object")?progressStore:{},theme:localStorage.getItem(THEME_KEY)||"purple",schemaVersion:4,updatedAt:firebase.firestore.FieldValue.serverTimestamp()}}
 function applyCloudPayload(data){
   if(!data||typeof data!=="object")return false;
   if(Array.isArray(data.files))db.files=data.files.filter(f=>f&&f.id&&f.name&&Array.isArray(f.words));
   if(data.progress&&typeof data.progress==="object")progressStore=data.progress;
-  if(data.theme){
-    localStorage.setItem(THEME_KEY,data.theme);
-    applyTheme(data.theme,false);
-  }
-  localStorage.setItem(DB_KEY,JSON.stringify(db));
-  localStorage.setItem(PROGRESS_KEY,JSON.stringify(progressStore));
-  renderAll();
-  return true;
-}
-async function migrateLegacyCloud(){
-  const userRef=cloud.db.collection("users").doc(cloud.user.uid);
-  const target=cloudDataRef();
-  const existing=await target.get();
-  if(existing.exists&&existing.data())return existing.data();
-
-  // Tương thích với cấu trúc cloud cũ của ứng dụng.
-  const [filesSnap,progSnap,settingsSnap]=await Promise.all([
-    userRef.collection("vocabFiles").get(),
-    userRef.collection("meta").doc("progress").get(),
-    userRef.collection("meta").doc("settings").get()
-  ]);
-  const legacyFiles=filesSnap.docs.map(d=>d.data()).filter(f=>f&&f.id);
-  const legacyProgress=progSnap.exists&&progSnap.data().data&&typeof progSnap.data().data==="object"?progSnap.data().data:{};
-  const legacyTheme=settingsSnap.exists&&settingsSnap.data().theme?settingsSnap.data().theme:null;
-  if(legacyFiles.length||Object.keys(legacyProgress).length||legacyTheme){
-    const payload={
-      files:legacyFiles.length?legacyFiles:db.files,
-      progress:Object.keys(legacyProgress).length?legacyProgress:progressStore,
-      theme:legacyTheme||localStorage.getItem(THEME_KEY)||"purple",
-      schemaVersion:2,
-      updatedAt:firebase.firestore.FieldValue.serverTimestamp()
-    };
-    await target.set(payload,{merge:true});
-    return payload;
-  }
-  return null;
+  if(data.theme){localStorage.setItem(THEME_KEY,data.theme);applyTheme(data.theme,false)}
+  localStorage.setItem(DB_KEY,JSON.stringify(db));localStorage.setItem(PROGRESS_KEY,JSON.stringify(progressStore));renderAll();return true;
 }
 async function syncToCloud(){
   if(!cloud.enabled||!cloud.ready||!cloud.user||cloud.syncing)return;
-  cloud.syncing=true;
-  const token=++cloudWriteToken;
-  setAuthStatus("Đang đồng bộ…");
-  try{
-    await cloudDataRef().set(localDataPayload(),{merge:true});
-    if(token===cloudWriteToken)setAuthStatus("Đã đồng bộ tự động","online");
-  }catch(e){
-    console.error("Cloud sync",e);
-    setAuthStatus("Lỗi đồng bộ — vẫn giữ dữ liệu trên thiết bị","error");
-  }finally{cloud.syncing=false}
+  cloud.syncing=true;const token=++cloudWriteToken;setAuthStatus("Đang đồng bộ…");
+  try{await cloudDataRef().set(localDataPayload(),{merge:true});if(token===cloudWriteToken)setAuthStatus("Đã đồng bộ thời gian thực","online")}
+  catch(e){console.error("Cloud sync",e);setAuthStatus("Lỗi đồng bộ — dữ liệu vẫn được giữ trên thiết bị","error")}
+  finally{cloud.syncing=false}
 }
 function startCloudListener(){
   if(!cloud.user)return;
   if(cloud.unsubscribe)cloud.unsubscribe();
   const ref=cloudDataRef();
   cloud.unsubscribe=ref.onSnapshot(snap=>{
-    if(!snap.exists){
-      setAuthStatus("Đang khởi tạo dữ liệu đồng bộ…");
-      return;
-    }
-    const data=snap.data()||{};
-    applyCloudPayload(data);
-    setAuthStatus("Đã đồng bộ tự động","online");
-  },err=>{
-    console.error("Cloud listener",err);
-    setAuthStatus("Không thể nghe đồng bộ thời gian thực","error");
-  });
+    if(!snap.exists){setAuthStatus("Đã đăng nhập — chưa có dữ liệu cloud","online");return}
+    applyCloudPayload(snap.data()||{});setAuthStatus("Đã đồng bộ thời gian thực","online")
+  },err=>{console.error("Cloud listener",err);setAuthStatus("Không thể nghe đồng bộ thời gian thực","error")});
+}
+function authErrorMessage(e,action){
+  const map={
+    "auth/invalid-email":"Email không hợp lệ.",
+    "auth/missing-password":"Vui lòng nhập mật khẩu.",
+    "auth/weak-password":"Mật khẩu quá yếu. Hãy dùng ít nhất 6 ký tự.",
+    "auth/email-already-in-use":"Email này đã được đăng ký. Hãy đăng nhập.",
+    "auth/invalid-credential":"Email hoặc mật khẩu không đúng.",
+    "auth/user-not-found":"Không tìm thấy tài khoản với email này.",
+    "auth/wrong-password":"Mật khẩu không đúng.",
+    "auth/too-many-requests":"Có quá nhiều lần thử. Hãy chờ một lúc rồi thử lại.",
+    "auth/network-request-failed":"Không có kết nối mạng hoặc kết nối không ổn định.",
+    "auth/operation-not-allowed":"Đăng nhập Email/Mật khẩu chưa được bật trong Firebase Authentication."
+  };
+  return map[e&&e.code]||(`${action} thất bại. Mã lỗi: ${e&&e.code?e.code:"không xác định"}`);
+}
+function getAuthCredentials(){
+  const email=$("authEmail")?.value.trim().toLowerCase()||"";
+  const password=$("authPassword")?.value||"";
+  if(!email){showMessage("Vui lòng nhập Email.","warn");$("authEmail")?.focus();return null}
+  if(!password){showMessage("Vui lòng nhập mật khẩu.","warn");$("authPassword")?.focus();return null}
+  return {email,password};
+}
+async function signInEmail(){
+  if(!cloud.enabled||!cloud.auth||authActionBusy)return;
+  const c=getAuthCredentials();if(!c)return;
+  authActionBusy=true;setAuthStatus("Đang đăng nhập…");
+  try{await cloud.auth.signInWithEmailAndPassword(c.email,c.password);$("authPassword").value="";showMessage("Đăng nhập thành công. Đang đồng bộ dữ liệu…","ok")}
+  catch(e){console.error("Email sign-in",e);const msg=authErrorMessage(e,"Đăng nhập");setAuthStatus(msg,"error");showMessage(msg,"error")}
+  finally{authActionBusy=false}
+}
+async function registerEmail(){
+  if(!cloud.enabled||!cloud.auth||authActionBusy)return;
+  const c=getAuthCredentials();if(!c)return;
+  if(c.password.length<6){showMessage("Mật khẩu phải có ít nhất 6 ký tự.","warn");return}
+  authActionBusy=true;setAuthStatus("Đang tạo tài khoản…");
+  try{await cloud.auth.createUserWithEmailAndPassword(c.email,c.password);$("authPassword").value="";showMessage("Đăng ký thành công. Dữ liệu sẽ được đồng bộ tự động.","ok")}
+  catch(e){console.error("Email register",e);const msg=authErrorMessage(e,"Đăng ký");setAuthStatus(msg,"error");showMessage(msg,"error")}
+  finally{authActionBusy=false}
+}
+async function signOutEmail(){
+  if(!cloud.auth||authActionBusy)return;
+  authActionBusy=true;
+  try{if(cloud.unsubscribe){cloud.unsubscribe();cloud.unsubscribe=null}await cloud.auth.signOut();cloud.user=null;cloud.ready=false;updateAuthUI(null);setAuthStatus("Chưa đăng nhập — dữ liệu chỉ lưu trên thiết bị");showMessage("Đã đăng xuất.","ok")}
+  catch(e){console.error("Email sign-out",e);setAuthStatus("Không thể đăng xuất","error")}
+  finally{authActionBusy=false}
+}
+async function prepareCloudForUser(user){
+  cloud.user=user;cloud.ready=false;
+  if(cloud.unsubscribe){cloud.unsubscribe();cloud.unsubscribe=null}
+  updateAuthUI(user);
+  try{
+    setAuthStatus("Đang kiểm tra dữ liệu tài khoản…");
+    const ref=cloudDataRef();
+    const snap=await ref.get();
+    if(snap.exists&&snap.data()){applyCloudPayload(snap.data()||{});setAuthStatus("Đã tải dữ liệu tài khoản","online")}
+    else{await ref.set(localDataPayload(),{merge:true});setAuthStatus("Đã tạo dữ liệu đồng bộ","online")}
+    cloud.ready=true;
+    startCloudListener();
+    setAuthStatus("Đã đồng bộ thời gian thực","online");
+  }catch(e){
+    console.error("Cloud user init",e);cloud.ready=false;setAuthStatus("Đồng bộ chưa sẵn sàng — vẫn giữ dữ liệu trên thiết bị","error");showMessage("Không thể tải dữ liệu cloud. Dữ liệu trên thiết bị vẫn được giữ nguyên.","warn")
+  }
 }
 async function initCloud(){
-  if(!firebaseConfigured()){
-    setAuthStatus("Firebase chưa được cấu hình — chỉ lưu cục bộ","error");
-    return;
-  }
+  updateAuthUI(null);
+  const loginBtn=$("emailLoginBtn"),registerBtn=$("emailRegisterBtn"),logoutBtn=$("emailLogoutBtn");
+  if(loginBtn)loginBtn.onclick=signInEmail;
+  if(registerBtn)registerBtn.onclick=registerEmail;
+  if(logoutBtn)logoutBtn.onclick=signOutEmail;
+  [$("authEmail"),$("authPassword")].forEach(el=>el&&el.addEventListener("keydown",e=>{if(e.key==="Enter")signInEmail()}));
+  if(!firebaseConfigured()){setAuthStatus("Firebase chưa được cấu hình — dữ liệu chỉ lưu trên thiết bị","error");return}
   try{
     if(!firebase.apps.length)firebase.initializeApp(window.FIREBASE_CONFIG);
-    cloud.enabled=true;
-    cloud.db=firebase.firestore();
-    cloud.auth=firebase.auth();
+    cloud.enabled=true;cloud.db=firebase.firestore();cloud.auth=firebase.auth();
     cloud.db.enablePersistence({synchronizeTabs:true}).catch(e=>console.warn("Firestore offline persistence:",e.code||e.message));
-
+    await cloud.auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
     cloud.auth.onAuthStateChanged(async user=>{
-      cloud.user=user;
-      cloud.ready=!!user;
-      if(cloud.unsubscribe){cloud.unsubscribe();cloud.unsubscribe=null;}
-      if(!user){
-        setAuthStatus("Đang cấp tài khoản đồng bộ tự động…");
-        try{
-          await cloud.auth.signInAnonymously();
-        }catch(e){
-          console.error("Anonymous auth",e);
-          setAuthStatus("Không thể tự đăng nhập ẩn danh — chỉ lưu cục bộ","error");
-        }
-        return;
-      }
-      try{
-        setAuthStatus("Đang tải dữ liệu đồng bộ…");
-        startCloudListener();
-        const migrated=await migrateLegacyCloud();
-        if(migrated){
-          applyCloudPayload(migrated);
-        }else{
-          const snap=await cloudDataRef().get();
-          if(snap.exists&&snap.data()){
-            applyCloudPayload(snap.data());
-          }else{
-            await syncToCloud();
-          }
-        }
-        setAuthStatus("Đã đồng bộ tự động","online");
-      }catch(e){
-        console.error("Cloud init",e);
-        setAuthStatus("Đồng bộ chưa sẵn sàng — vẫn giữ dữ liệu cục bộ","error");
-      }
+      if(!user){cloud.user=null;cloud.ready=false;if(cloud.unsubscribe){cloud.unsubscribe();cloud.unsubscribe=null}updateAuthUI(null);setAuthStatus("Chưa đăng nhập — dữ liệu chỉ lưu trên thiết bị");return}
+      await prepareCloudForUser(user);
     });
-  }catch(e){
-    console.error(e);
-    setAuthStatus("Firebase chưa sẵn sàng — chỉ lưu cục bộ","error");
-  }
+  }catch(e){console.error("Firebase init",e);setAuthStatus("Firebase chưa sẵn sàng — dữ liệu chỉ lưu trên thiết bị","error")}
 }
 
 function fileById(id){return db.files.find(f=>f.id===id)||null}
