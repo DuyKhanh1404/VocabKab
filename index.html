@@ -84,6 +84,7 @@ h2{margin-top:0}.muted{color:var(--muted)}
 .result-list{display:grid;gap:8px;text-align:left}.result-item{padding:11px;border-radius:9px;border:1px solid var(--border)}.result-item.ok{border-color:#86efac;background:#f0fdf4}.result-item.bad{border-color:#fecaca;background:#fef2f2}
 .sentence{font-size:25px;text-align:center;line-height:1.7;margin:25px 0}.blank{display:inline-block;min-width:130px;border-bottom:3px solid var(--primary);color:var(--primary)}
 .answer{width:100%;max-width:500px;padding:13px;border:1px solid var(--border);border-radius:9px;background:var(--card);color:var(--text);display:block;margin:0 auto 12px}
+.flash-example{width:100%;max-width:620px;margin-top:14px;padding:10px 12px;border-top:1px solid var(--border);font-size:15px;line-height:1.55;color:var(--muted);white-space:pre-line}
 .theme-card{display:flex;gap:10px;flex-wrap:wrap}.theme-btn{padding:12px 16px;border:2px solid var(--border);border-radius:10px;background:var(--card);color:var(--text);font-weight:700}.theme-btn.active{border-color:var(--primary);color:var(--primary)}
 .hidden{display:none!important}.empty{text-align:center;padding:45px 15px;color:var(--muted)}
 .question-limit{border:1px solid var(--border);background:var(--card);color:var(--text);border-radius:9px;padding:9px 12px;font-weight:600}
@@ -215,7 +216,7 @@ input,select{max-width:100%}
     <div id="flashArea" class="hidden">
       <div class="flash"><div id="flashInner" class="flash-inner">
         <div class="face"><small class="muted">TỪ VỰNG</small><div id="flashWord" class="big"></div><div id="flashType" class="badge"></div><p class="muted">Bấm thẻ để lật</p></div>
-        <div class="face back"><small class="muted">NGHĨA</small><div id="flashMeaning" class="meaning"></div></div>
+        <div class="face back"><small class="muted">NGHĨA</small><div id="flashMeaning" class="meaning"></div><div id="flashExample" class="flash-example hidden"></div></div>
       </div></div>
       <div class="controls"><button class="btn secondary" id="prevFlash">← Trước</button><button class="btn primary" id="flipFlash">🔄 Lật</button><button class="btn secondary" id="nextFlash">Sau →</button></div>
       <p id="flashCounter" class="muted" style="text-align:center"></p>
@@ -244,7 +245,8 @@ input,select{max-width:100%}
       <div class="progress"><i id="fillProgress" style="width:0%"></i></div><p id="fillCounter" class="muted" style="text-align:center"></p>
       <div id="fillSentence" class="sentence"></div>
       <input id="fillAnswer" class="answer" autocomplete="off" placeholder="Nhập chính xác từ vựng...">
-      <div class="controls"><button id="submitFill" class="btn primary">Kiểm tra</button></div>
+      <div id="fillFeedback" class="recall-feedback hidden"></div>
+      <div class="controls"><button id="submitFill" class="btn primary" type="button">Kiểm tra</button></div>
     </div>
     <div id="fillResult" class="result hidden"></div>
   </div></section>
@@ -593,12 +595,24 @@ function renderFlash(){
   const f=fileById(activeFileId);if(!f||!f.words.length)return;
   flashIndex=(flashIndex+f.words.length)%f.words.length;const w=f.words[flashIndex];
   const enToVi=flashDirection==="en-vi";
-  $("flashFrontLabel").textContent=enToVi?"TIẾNG ANH":"TIẾNG VIỆT";
-  $("flashBackLabel").textContent=enToVi?"TIẾNG VIỆT":"TIẾNG ANH";
+  const flashFrontLabel=$("flashFrontLabel");
+  const flashBackLabel=$("flashBackLabel");
+  if(flashFrontLabel)flashFrontLabel.textContent=enToVi?"TIẾNG ANH":"TIẾNG VIỆT";
+  if(flashBackLabel)flashBackLabel.textContent=enToVi?"TIẾNG VIỆT":"TIẾNG ANH";
   $("flashWord").textContent=enToVi?w.word:w.meaning;
   $("flashType").textContent=enToVi?w.type:"";
   $("flashType").classList.toggle("hidden",!enToVi);
   $("flashMeaning").textContent=enToVi?w.meaning:w.word;
+
+  // Cột 4 có định dạng: Từ vựng | Từ loại | Nghĩa | Ví dụ.
+  // Hiển thị câu ví dụ ở mặt sau cho cả hai chiều Flashcard.
+  const example=$("flashExample");
+  if(example){
+    const text=String(w.example||"").trim();
+    example.textContent=text;
+    example.classList.toggle("hidden",!text);
+  }
+
   progressFor(activeFileId).flashIndex=flashIndex;
   saveProgress();
   $("flashCounter").textContent=`${flashIndex+1} / ${f.words.length}`;
@@ -700,15 +714,56 @@ function startFill(){
 }
 function renderFill(){
   if(fill.index>=fill.items.length){recordActivity("fill",true);showResult("fill");return}
-  const w=fill.items[fill.index];fill.locked=false;$("fillCounter").textContent=`Câu ${fill.index+1}/${fill.items.length}`;$("fillProgress").style.width=`${fill.index/fill.items.length*100}%`;$("fillSentence").innerHTML=sentenceFor(w);$("fillAnswer").value="";$("fillAnswer").focus();
+  const w=fill.items[fill.index];
+  if(!w){fill.index=fill.items.length;renderFill();return}
+  fill.locked=false;
+  $("fillCounter").textContent=`Câu ${fill.index+1}/${fill.items.length}`;
+  $("fillProgress").style.width=`${fill.index/fill.items.length*100}%`;
+  $("fillSentence").innerHTML=sentenceFor(w);
+  $("fillAnswer").value="";
+  const fb=$("fillFeedback");
+  if(fb){fb.className="recall-feedback hidden";fb.innerHTML=""}
+  $("fillAnswer").focus();
 }
-function submitFill(){
-  if(fill.locked)return;const w=fill.items[fill.index],given=$("fillAnswer").value.trim();if(!given){showMessage("Hãy nhập câu trả lời.","warn");return}
-  fill.locked=true;const correct=norm(given)===norm(w.word);if(correct)fill.score++;fill.answers.push({word:w.word,correct,expected:w.word,given});
-  recordActivity("fill");setTimeout(()=>{fill.index++;recordActivity("fill");renderFill()},450);
-}
-$("submitFill").onclick=submitFill;$("fillAnswer").addEventListener("keydown",e=>{if(e.key==="Enter")submitFill()});
 
+function submitFill(){
+  if(fill.locked)return;
+  const w=fill.items[fill.index];
+  if(!w)return;
+
+  const input=$("fillAnswer");
+  const given=String(input.value||"").trim();
+  if(!given){showMessage("Hãy nhập câu trả lời.","warn");input.focus();return}
+
+  fill.locked=true;
+  // trim + không phân biệt hoa thường + gom khoảng trắng thừa.
+  const correct=norm(given)===norm(w.word);
+  if(correct)fill.score++;
+  fill.answers.push({word:w.word,correct,expected:w.word,given});
+
+  const fb=$("fillFeedback");
+  if(fb){
+    fb.className="recall-feedback "+(correct?"ok":"bad");
+    fb.innerHTML=correct
+      ?"✓ Chính xác!"
+      :`✗ Chưa đúng. Đáp án: <b>${escapeHtml(w.word)}</b>`;
+  }
+
+  recordActivity("fill");
+  setTimeout(()=>{
+    fill.index++;
+    recordActivity("fill");
+    renderFill();
+  },450);
+}
+
+$("submitFill").onclick=submitFill;
+$("fillAnswer").addEventListener("keydown",e=>{
+  if(e.key==="Enter"){
+    e.preventDefault();
+    submitFill();
+  }
+});
 
 function startRecall(reset=true){
   const f=fileById(activeFileId);
