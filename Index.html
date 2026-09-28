@@ -1,0 +1,923 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <!-- Icon hiển thị trên tab trình duyệt máy tính -->
+<link rel="icon" type="image/png" href="./image.png">
+
+<!-- Icon khi đưa ra màn hình chính điện thoại (iOS / Android) -->
+<link rel="apple-touch-icon" href="./image.png">
+
+<!-- Liên kết file cấu hình PWA -->
+<link rel="manifest" href="./manifest.json">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover">
+<meta name="theme-color" content="#4f46e5">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="./manifest.json">
+<link rel="apple-touch-icon" href="./icons/icon-192.png">
+<title>VocabKab — Vocabulary Learning</title>
+<script src="https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js"></script>
+<!-- Firebase Compat SDK: dùng chung một kiểu SDK, không trộn ES Module import. -->
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
+<style>
+:root{
+  --primary:#4f46e5;--primary2:#7c3aed;--bg:#f5f7fb;--card:#fff;--text:#1f2937;
+  --muted:#6b7280;--border:#e5e7eb;--hover:#eef2ff;--danger:#dc2626;--success:#16a34a;
+  --shadow:0 8px 30px rgba(15,23,42,.07)
+}
+[data-theme="dark"]{
+  --primary:#818cf8;--primary2:#a78bfa;--bg:#111827;--card:#1f2937;--text:#f3f4f6;
+  --muted:#9ca3af;--border:#374151;--hover:#312e81;--shadow:0 8px 30px rgba(0,0,0,.25)
+}
+[data-theme="green"]{
+  --primary:#047857;--primary2:#0f766e;--bg:#f0fdf4;--card:#fff;--text:#17352c;
+  --muted:#64748b;--border:#d1fae5;--hover:#ecfdf5
+}
+[data-theme="blue"]{
+  --primary:#0284c7;--primary2:#2563eb;--bg:#f0f9ff;--card:#fff;--text:#172033;
+  --muted:#64748b;--border:#dbeafe;--hover:#eff6ff
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:Inter,system-ui,-apple-system,"Segoe UI",Arial,sans-serif;background:var(--bg);color:var(--text)}
+button,input{font:inherit}button{cursor:pointer}
+header{background:linear-gradient(135deg,var(--primary),var(--primary2));color:#fff;padding:25px 20px}
+.header-inner,nav,main{max-width:1180px;margin:auto}
+header h1{margin:0 0 6px;font-size:28px}header p{margin:0;opacity:.9}
+nav{padding:15px 20px;display:flex;gap:8px;flex-wrap:wrap}
+.nav-btn{border:1px solid var(--border);background:var(--card);color:var(--text);padding:10px 14px;border-radius:10px;font-weight:700}
+.nav-btn.active{background:var(--primary);color:#fff;border-color:var(--primary)}
+main{padding:5px 20px 60px}.view{display:none}.view.active{display:block}
+.panel{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:22px;box-shadow:var(--shadow);margin-bottom:18px}
+h2{margin-top:0}.muted{color:var(--muted)}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:15px}
+.stat{text-align:center;border:1px solid var(--border);border-radius:14px;padding:18px;background:var(--card)}
+.stat b{display:block;font-size:30px;color:var(--primary)}
+.upload{border:2px dashed var(--primary);text-align:center;background:var(--hover)}
+.file-label,.btn{border:0;border-radius:9px;padding:10px 15px;font-weight:700}
+.file-label,.primary{background:var(--primary);color:#fff}.secondary{background:#e5e7eb;color:#374151}
+.danger{background:#fee2e2;color:#b91c1c}.success{background:#dcfce7;color:#166534}
+#fileInput{display:none}
+.message{display:none;padding:12px 15px;border-radius:10px;margin-bottom:15px}.message.show{display:block}
+.message.ok{background:#dcfce7;color:#166534}.message.err{background:#fee2e2;color:#991b1b}.message.warn{background:#fef3c7;color:#92400e}
+.file-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:13px}
+.file-card{border:1px solid var(--border);border-radius:13px;padding:16px;background:var(--card);transition:.15s}
+.file-card:hover{border-color:var(--primary);transform:translateY(-2px)}
+.file-card h3{margin:0 0 7px;word-break:break-word}.file-meta{font-size:13px;color:var(--muted);margin-bottom:13px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.between{justify-content:space-between}
+.search{width:100%;max-width:390px;border:1px solid var(--border);background:var(--card);color:var(--text);border-radius:9px;padding:10px 12px;outline:none}
+.toolbar{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+.table{width:100%;border-collapse:collapse}.table th,.table td{padding:11px 9px;border-bottom:1px solid var(--border);text-align:left;vertical-align:top}.table th{color:var(--muted);font-size:13px}
+.checkbox{width:18px;height:18px;accent-color:var(--primary)}
+.badge{display:inline-block;padding:3px 8px;border-radius:6px;background:var(--hover);color:var(--primary);font-size:12px;font-weight:700}
+.flash{max-width:720px;margin:20px auto;perspective:1000px}.flash-inner{height:350px;position:relative;transform-style:preserve-3d;transition:.45s;cursor:pointer}.flash-inner.flip{transform:rotateY(180deg)}
+.face{position:absolute;inset:0;backface-visibility:hidden;border:1px solid var(--border);border-radius:20px;background:var(--card);display:flex;align-items:center;justify-content:center;flex-direction:column;text-align:center;padding:30px;box-shadow:var(--shadow)}
+.back{transform:rotateY(180deg);background:var(--hover)}.big{font-size:43px;font-weight:800}.meaning{font-size:31px;font-weight:800;color:var(--primary)}
+.controls{display:flex;justify-content:center;gap:8px;flex-wrap:wrap}
+.progress{height:8px;background:var(--border);border-radius:20px;overflow:hidden}.progress i{display:block;height:100%;background:var(--primary)}
+.quiz-question{text-align:center;font-size:28px;font-weight:800;margin:28px 0}.options{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.option{padding:15px;border:2px solid var(--border);border-radius:11px;background:var(--card);color:var(--text);text-align:left}.option.correct{border-color:var(--success);background:#dcfce7}.option.wrong{border-color:var(--danger);background:#fee2e2}
+.result{text-align:center}.score{font-size:55px;font-weight:900;color:var(--primary)}
+.result-list{display:grid;gap:8px;text-align:left}.result-item{padding:11px;border-radius:9px;border:1px solid var(--border)}.result-item.ok{border-color:#86efac;background:#f0fdf4}.result-item.bad{border-color:#fecaca;background:#fef2f2}
+.sentence{font-size:25px;text-align:center;line-height:1.7;margin:25px 0}.blank{display:inline-block;min-width:130px;border-bottom:3px solid var(--primary);color:var(--primary)}
+.answer{width:100%;max-width:500px;padding:13px;border:1px solid var(--border);border-radius:9px;background:var(--card);color:var(--text);display:block;margin:0 auto 12px}
+.flash-example{width:100%;max-width:620px;margin-top:14px;padding:10px 12px;border-top:1px solid var(--border);font-size:15px;line-height:1.55;color:var(--muted);white-space:pre-line}
+.theme-card{display:flex;gap:10px;flex-wrap:wrap}.theme-btn{padding:12px 16px;border:2px solid var(--border);border-radius:10px;background:var(--card);color:var(--text);font-weight:700}.theme-btn.active{border-color:var(--primary);color:var(--primary)}
+.hidden{display:none!important}.empty{text-align:center;padding:45px 15px;color:var(--muted)}
+.question-limit{border:1px solid var(--border);background:var(--card);color:var(--text);border-radius:9px;padding:9px 12px;font-weight:600}
+@media(max-width:750px){.grid{grid-template-columns:1fr}.options{grid-template-columns:1fr}.big{font-size:32px}.meaning{font-size:25px}.flash-inner{height:300px}.table{font-size:13px}.table th:nth-child(4),.table td:nth-child(4){display:none}}
+.recall-config{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:15px 0}
+.recall-prompt{text-align:center;font-size:40px;font-weight:900;margin:35px 0 20px}
+.direction-card{border:2px solid var(--border);border-radius:12px;padding:13px;background:var(--card);cursor:pointer}
+.direction-card.active{border-color:var(--primary);background:var(--hover);color:var(--primary)}
+.recall-feedback{margin:15px auto;padding:14px;border-radius:10px;max-width:650px;text-align:center}
+.recall-feedback.ok{background:#dcfce7;color:#166534}.recall-feedback.bad{background:#fee2e2;color:#991b1b}
+@media(max-width:750px){.recall-config{grid-template-columns:1fr}.recall-prompt{font-size:31px}}
+.direction-toggle{display:flex;gap:6px;align-items:center;padding:4px;border:1px solid var(--border);border-radius:11px;background:var(--card)}
+.direction-toggle .direction-btn{border:0;border-radius:8px;padding:8px 12px;background:transparent;color:var(--muted);font-weight:700;min-height:40px}
+.direction-toggle .direction-btn.active{background:var(--primary);color:#fff}
+
+
+
+/* --- Mobile / PWA upgrade --- */
+html{background:var(--bg)}
+body{min-height:100vh;overflow-x:hidden;padding-bottom:env(safe-area-inset-bottom)}
+header{padding-top:max(25px,env(safe-area-inset-top))}
+nav{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(12px)}
+.btn,.nav-btn,.file-label,.theme-btn,.direction-card,.option{min-height:44px}
+input,select{max-width:100%}
+.panel{min-width:0}
+.file-card,.file-card h3{min-width:0}
+.file-card h3{overflow-wrap:anywhere}
+@media(max-width:600px){
+  header h1{font-size:23px}
+  header p{font-size:13px;line-height:1.5}
+  nav{padding:9px 10px;gap:6px}
+  .nav-btn{padding:9px 10px;font-size:13px;flex:1 1 calc(33.333% - 6px)}
+  main{padding:4px 10px 40px}
+  .panel{padding:15px;border-radius:13px}
+  .toolbar{align-items:stretch}
+  .toolbar>.row{width:100%}
+  .toolbar .row>*{flex:1}
+  .search{max-width:none}
+  .file-grid{grid-template-columns:1fr}
+  .flash{margin:12px auto}
+  .flash-inner{height:min(58vh,330px)}
+  .big{font-size:29px;overflow-wrap:anywhere}
+  .meaning{font-size:23px;overflow-wrap:anywhere}
+  .quiz-question{font-size:22px;margin:20px 0}
+  .recall-prompt{font-size:28px;overflow-wrap:anywhere}
+  .answer{font-size:16px}
+  .table{min-width:560px}
+  .table th:nth-child(4),.table td:nth-child(4){display:table-cell}
+  #detailBody{font-size:13px}
+}
+.auth-bar{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:12px;flex-wrap:wrap}
+.auth-status{font-size:13px;opacity:.95;display:flex;align-items:center}
+.auth-panel{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+.auth-input{width:150px;border:1px solid rgba(255,255,255,.28);background:rgba(255,255,255,.12);color:#fff;border-radius:9px;padding:9px 10px;outline:none}
+.auth-input::placeholder{color:rgba(255,255,255,.78)}
+.auth-btn,.logout-btn{border:0;border-radius:9px;padding:9px 11px;font-weight:700;cursor:pointer;font-size:13px}
+.auth-btn.login{background:#fff;color:#202124}.auth-btn.register{background:rgba(255,255,255,.14);color:#fff;border:1px solid rgba(255,255,255,.25)}
+.logout-btn{background:rgba(255,255,255,.1);color:inherit;border:1px solid rgba(255,255,255,.18)}
+.auth-user{display:none;font-size:13px;font-weight:700;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.auth-user.show{display:block}
+.sync-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#fbbf24;margin-right:5px}
+.sync-dot.online{background:#4ade80}.sync-dot.error{background:#f87171}
+@media(max-width:750px){.auth-bar{justify-content:flex-start}.auth-panel{width:100%}.auth-input{flex:1;min-width:130px}.auth-btn{flex:1}.auth-status{width:100%}}
+</style>
+</head>
+<body>
+<header><div class="header-inner">
+  <h1>📚 VocabKab</h1><p>Học từ vựng theo từng file/chủ đề — Flashcard, Quiz, Điền từ và Nhìn từ → Viết nghĩa</p>
+</div><div class="auth-bar">
+  <div id="authPanel" class="auth-panel">
+    <input id="authEmail" class="auth-input" type="email" autocomplete="email" placeholder="Email">
+    <input id="authPassword" class="auth-input" type="password" autocomplete="current-password" placeholder="Mật khẩu">
+    <button id="emailLoginBtn" class="auth-btn login" type="button">🔐 Đăng nhập</button>
+    <button id="emailRegisterBtn" class="auth-btn register" type="button">📝 Đăng ký tài khoản mới</button>
+  </div>
+  <span id="authUser" class="auth-user"></span>
+  <span id="authStatus" class="auth-status"><span class="sync-dot"></span>Chưa đăng nhập — dữ liệu chỉ lưu trên thiết bị</span>
+  <button id="emailLogoutBtn" class="logout-btn" type="button" hidden>Đăng xuất</button>
+</div>
+</div></header>
+
+<nav>
+  <button class="nav-btn active" data-view="library">📚 Tổng hợp</button>
+  <button class="nav-btn" data-view="flashcard">🃏 Flashcard</button>
+  <button class="nav-btn" data-view="quiz">📝 Quiz</button>
+  <button class="nav-btn" data-view="fill">✍️ Điền từ</button>
+  <button class="nav-btn" data-view="recall">🧠 Viết nghĩa</button>
+  <button class="nav-btn" data-view="manage">🗂️ Quản lý file</button>
+  <button class="nav-btn" data-view="theme">🎨 Giao diện</button>
+</nav>
+
+<main>
+  <div id="message" class="message"></div>
+
+  <section id="library" class="view active">
+    <div class="panel upload">
+      <h2>📤 Thêm bài tập mới</h2>
+      <p>File <b>.txt</b>, <b>.csv</b> hoặc <b>.docx</b>. Mỗi dòng bắt buộc:</p>
+      <p><code>Từ vựng | Từ loại | Nghĩa tiếng Việt</code></p>
+      <label class="file-label" for="fileInput">📂 Chọn file</label>
+      <input id="fileInput" type="file" accept=".txt,.csv,.docx">
+      <p class="muted">Tên file sẽ trở thành tên bài tập. Không thể tải lại tên đã tồn tại.</p>
+    </div>
+
+    <div class="grid">
+      <div class="stat"><b id="fileCount">0</b><span class="muted">Bài tập / file</span></div>
+      <div class="stat"><b id="wordCount">0</b><span class="muted">Tổng từ</span></div>
+      <div class="stat"><b id="themeLabel">Purple</b><span class="muted">Giao diện hiện tại</span></div>
+    </div>
+
+    <div class="panel">
+      <div class="toolbar"><div><h2 style="margin:0">📁 Các bài tập</h2><span class="muted">Bấm vào một file để luyện riêng file đó.</span></div>
+        <input id="librarySearch" class="search" placeholder="🔎 Tìm tên file/chủ đề...">
+      </div>
+      <div id="fileGrid" class="file-grid"></div>
+    </div>
+  </section>
+
+  <section id="flashcard" class="view"><div class="panel">
+    <div class="toolbar"><div><h2 style="margin:0">🃏 Flashcard</h2><span id="activeFileFlash" class="muted"></span></div>
+      <div class="row">
+        <div class="direction-toggle" aria-label="Chiều ngôn ngữ Flashcard">
+          <button type="button" class="direction-btn active" data-flash-direction="en-vi">🇬🇧 Anh → Việt</button>
+          <button type="button" class="direction-btn" data-flash-direction="vi-en">🇻🇳 Việt → Anh</button>
+        </div>
+        <button class="btn secondary" id="backLibrary1">← Chọn file khác</button>
+      </div></div>
+    <div id="flashEmpty" class="empty">Hãy chọn một bài tập.</div>
+    <div id="flashArea" class="hidden">
+      <div class="flash"><div id="flashInner" class="flash-inner">
+        <div class="face"><small class="muted">TỪ VỰNG</small><div id="flashWord" class="big"></div><div id="flashType" class="badge"></div><p class="muted">Bấm thẻ để lật</p></div>
+        <div class="face back"><small class="muted">NGHĨA</small><div id="flashMeaning" class="meaning"></div><div id="flashExample" class="flash-example hidden"></div></div>
+      </div></div>
+      <div class="controls"><button class="btn secondary" id="prevFlash">← Trước</button><button class="btn primary" id="flipFlash">🔄 Lật</button><button class="btn secondary" id="nextFlash">Sau →</button></div>
+      <p id="flashCounter" class="muted" style="text-align:center"></p>
+    </div>
+  </div></section>
+
+  <section id="quiz" class="view"><div class="panel">
+    <div class="toolbar"><div><h2 style="margin:0">📝 Quiz 4 đáp án</h2><span id="activeFileQuiz" class="muted"></span></div><div class="row">
+         <div class="direction-toggle" aria-label="Chiều ngôn ngữ Quiz">
+           <button type="button" class="direction-btn active" data-quiz-direction="en-vi">🇬🇧 Anh → Việt</button>
+           <button type="button" class="direction-btn" data-quiz-direction="vi-en">🇻🇳 Việt → Anh</button>
+         </div><label class="muted">Số câu <select id="quizLimit" class="question-limit"><option value="0">Tất cả</option><option value="10">10</option><option value="20">20</option><option value="50">50</option></select></label><button class="btn secondary" id="backLibrary2">← Chọn file khác</button></div></div>
+    <div id="quizEmpty" class="empty">Một bài tập cần ít nhất 4 từ để Quiz.</div>
+    <div id="quizArea" class="hidden">
+      <div class="progress"><i id="quizProgress" style="width:0%"></i></div>
+      <p id="quizCounter" class="muted" style="text-align:center"></p>
+      <div id="quizQuestion" class="quiz-question"></div><div id="quizOptions" class="options"></div>
+    </div>
+    <div id="quizResult" class="result hidden"></div>
+  </div></section>
+
+  <section id="fill" class="view"><div class="panel">
+    <div class="toolbar"><div><h2 style="margin:0">✍️ Điền từ vào câu</h2><span id="activeFileFill" class="muted"></span></div><div class="row"><label class="muted">Số câu <select id="fillLimit" class="question-limit"><option value="0">Tất cả</option><option value="10">10</option><option value="20">20</option><option value="50">50</option></select></label><button class="btn secondary" id="backLibrary3">← Chọn file khác</button></div></div>
+    <div id="fillEmpty" class="empty">Hãy chọn một bài tập.</div>
+    <div id="fillArea" class="hidden">
+      <div class="progress"><i id="fillProgress" style="width:0%"></i></div><p id="fillCounter" class="muted" style="text-align:center"></p>
+      <div id="fillSentence" class="sentence"></div>
+      <input id="fillAnswer" class="answer" autocomplete="off" placeholder="Nhập chính xác từ vựng...">
+      <div id="fillFeedback" class="recall-feedback hidden"></div>
+      <div class="controls"><button id="submitFill" class="btn primary" type="button">Kiểm tra</button></div>
+    </div>
+    <div id="fillResult" class="result hidden"></div>
+  </div></section>
+
+  <section id="recall" class="view"><div class="panel">
+    <div class="toolbar"><div><h2 style="margin:0">🧠 Nhìn từ và viết nghĩa</h2><span id="activeFileRecall" class="muted"></span></div>
+      <button class="btn secondary" id="backLibrary4">← Chọn file khác</button></div>
+    <div id="recallSetup" class="panel" style="background:var(--hover)">
+      <h3>⚙️ Cấu hình bài tập</h3>
+      <p class="muted">Chọn chiều dịch trước khi bắt đầu.</p>
+      <div class="recall-config">
+        <button class="direction-card active" data-direction="en-vi"><b>🇬🇧 Tiếng Anh → 🇻🇳 Tiếng Việt</b><br><span class="muted">Nhìn từ tiếng Anh, tự viết nghĩa tiếng Việt.</span></button>
+        <button class="direction-card" data-direction="vi-en"><b>🇻🇳 Tiếng Việt → 🇬🇧 Tiếng Anh</b><br><span class="muted">Nhìn nghĩa tiếng Việt, tự viết từ tiếng Anh.</span></button>
+      </div>
+      <label class="muted">Số câu
+        <select id="recallLimit" class="question-limit"><option value="0">Tất cả</option><option value="10">10</option><option value="20">20</option><option value="50">50</option></select>
+      </label>
+      <div class="controls" style="margin-top:15px"><button id="startRecall" class="btn primary">▶ Bắt đầu</button></div>
+    </div>
+    <div id="recallEmpty" class="empty hidden">Hãy chọn một bài tập.</div>
+    <div id="recallArea" class="hidden">
+      <div class="progress"><i id="recallProgress" style="width:0%"></i></div>
+      <p id="recallCounter" class="muted" style="text-align:center"></p>
+      <div id="recallPrompt" class="recall-prompt"></div>
+      <input id="recallAnswer" class="answer" autocomplete="off" placeholder="Nhập câu trả lời...">
+      <div class="controls"><button id="submitRecall" class="btn primary">Kiểm tra</button></div>
+      <div id="recallFeedback"></div>
+    </div>
+    <div id="recallResult" class="result hidden"></div>
+  </div></section>
+
+  <section id="manage" class="view"><div class="panel">
+    <div class="toolbar"><div><h2 style="margin:0">🗂️ Quản lý & Xóa file</h2><span class="muted">Có thể xóa cả file hoặc mở file để xóa từng từ.</span></div>
+      <input id="manageSearch" class="search" placeholder="🔎 Tìm file cần quản lý..."></div>
+    <div id="manageGrid" class="file-grid"></div>
+  </div></section>
+
+  <section id="theme" class="view"><div class="panel">
+    <h2>🎨 Tùy chỉnh giao diện</h2><p class="muted">Lựa chọn được lưu trong trình duyệt.</p>
+    <div id="themeChoices" class="theme-card">
+      <button class="theme-btn" data-theme-choice="purple">💜 Purple</button>
+      <button class="theme-btn" data-theme-choice="dark">🌙 Dark Mode</button>
+      <button class="theme-btn" data-theme-choice="green">🌿 Dark Green</button>
+      <button class="theme-btn" data-theme-choice="blue">💙 Ocean Blue</button>
+    </div>
+  </div></section>
+
+  <section id="detail" class="view"><div class="panel">
+    <div class="toolbar"><div><h2 id="detailTitle" style="margin:0"></h2><span id="detailMeta" class="muted"></span></div>
+      <button class="btn secondary" id="backManage">← Quản lý file</button></div>
+    <div class="toolbar">
+      <input id="detailSearch" class="search" placeholder="🔎 Tìm từ trong file...">
+      <div class="row"><label><input id="detailSelectAll" class="checkbox" type="checkbox"> Chọn tất cả</label>
+      <button id="deleteWords" class="btn danger" disabled>🗑 Xóa các từ đã chọn</button></div>
+    </div>
+    <div style="overflow:auto"><table class="table"><thead><tr><th></th><th>Từ</th><th>Từ loại</th><th>Nghĩa</th><th></th></tr></thead><tbody id="detailBody"></tbody></table></div>
+  </div></section>
+</main>
+
+<script>
+"use strict";
+
+/* Firebase Web App config.
+   Đây là cấu hình client-side công khai của Firebase Web App.
+   Security phải được bảo vệ bằng Authentication + Firestore Security Rules.
+*/
+window.FIREBASE_CONFIG = {
+  apiKey: "AIzaSyAy9hFpz8dOYxrUJ0nvuDQ0bGFbrLf5IWg",
+  authDomain: "vocabkab.firebaseapp.com",
+  projectId: "vocabkab",
+  storageBucket: "vocabkab.firebasestorage.app",
+  messagingSenderId: "634186914698",
+  appId: "1:634186914698:web:1da78d0bd8955e49100673",
+  measurementId: "G-2CR7GYJWZN"
+};
+
+const DB_KEY="vocabKabExercises_v2", THEME_KEY="vocabKabTheme_v2", PROGRESS_KEY="vocabKabProgress_v2";
+const SETTINGS_KEY="vocabKabSettings_v1";
+let progressStore={}, cloud={enabled:false,ready:false,syncing:false,user:null,unsubscribe:null};
+// Giới hạn mặc định: 0 = lấy toàn bộ từ trong file.
+// Người dùng có thể đổi sang 10/20/50 ở giao diện bài tập.
+const DEFAULT_QUESTION_LIMIT=0;
+let db={files:[]};
+let activeFileId=null, selectedDetail=new Set();
+let flashIndex=0;
+let flashDirection="en-vi";
+let quizDirection="en-vi";
+let quiz={items:[],index:0,score:0,answers:[],locked:false};
+let fill={items:[],index:0,score:0,answers:[],locked:false};
+let recall={items:[],index:0,score:0,answers:[],locked:false,direction:"en-vi"};
+
+const $=id=>document.getElementById(id);
+const uid=()=>Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,8);
+const norm=s=>String(s).trim().toLowerCase().replace(/\s+/g," ");
+
+function showMessage(text,type="ok"){const m=$("message");m.textContent=text;m.className="message show "+type;clearTimeout(showMessage.t);showMessage.t=setTimeout(()=>m.className="message",5500)}
+function save(){
+  localStorage.setItem(DB_KEY,JSON.stringify(db));
+  scheduleCloudSync();
+}
+function load(){
+  try{db=JSON.parse(localStorage.getItem(DB_KEY)||'{"files":[]}')}catch{db={files:[]}}
+  if(!Array.isArray(db.files))db={files:[]};
+  db.files=db.files.filter(f=>f&&f.id&&f.name&&Array.isArray(f.words));
+}
+function loadProgress(){
+  try{progressStore=JSON.parse(localStorage.getItem(PROGRESS_KEY)||"{}")}catch{progressStore={}}
+  if(!progressStore||typeof progressStore!=="object")progressStore={};
+}
+// Trả về dữ liệu tiến độ của một file. Tạo object rỗng nếu file chưa có tiến độ.
+// Hàm này được dùng bởi fileCard(), renderFlash() và các bài luyện tập.
+function progressFor(id){
+  if(!id)return {};
+  if(!progressStore[id] || typeof progressStore[id] !== "object") progressStore[id]={};
+  return progressStore[id];
+}
+function saveProgress(){
+  localStorage.setItem(PROGRESS_KEY,JSON.stringify(progressStore));
+  scheduleCloudSync();
+}
+function recordActivity(kind,completed=false){
+  if(!activeFileId)return;
+  const state=progressFor(activeFileId);
+  const data=kind==="quiz"?quiz:kind==="fill"?fill:recall;
+  if(!state[kind]||typeof state[kind]!=="object")state[kind]={};
+  state[kind].score=data.score;
+  state[kind].answered=data.answers.length;
+  state[kind].total=data.items.length;
+  state[kind].lastPercent=data.items.length?Math.round(data.score/data.items.length*100):0;
+  state[kind].updatedAt=new Date().toISOString();
+  if(completed)state[kind].attempts=(state[kind].attempts||0)+1;
+  saveProgress();
+}
+let cloudTimer=null;
+let cloudWriteToken=0;
+let authActionBusy=false;
+let authReadyResolve=null;
+function scheduleCloudSync(){if(!cloud.enabled||!cloud.ready||!cloud.user||cloud.syncing)return;clearTimeout(cloudTimer);cloudTimer=setTimeout(()=>syncToCloud(),450)}
+function setAuthStatus(text,state=""){const el=$("authStatus");if(!el)return;el.innerHTML=`<span class="sync-dot ${state}"></span>${escapeHtml(text)}`}
+function updateAuthUI(user){
+  const panel=$("authPanel"),userBox=$("authUser"),logoutBtn=$("emailLogoutBtn");
+  if(!panel||!userBox||!logoutBtn)return;
+  if(user){panel.hidden=true;userBox.classList.add("show");userBox.textContent=`Đang đăng nhập: ${user.email||user.uid}`;logoutBtn.hidden=false}
+  else{panel.hidden=false;userBox.classList.remove("show");userBox.textContent="";logoutBtn.hidden=true}
+}
+function firebaseConfigured(){return !!(window.FIREBASE_CONFIG&&window.FIREBASE_CONFIG.apiKey&&window.FIREBASE_CONFIG.projectId)}
+function cloudDataRef(){return cloud.db.collection("users").doc(cloud.user.uid).collection("vocab_data").doc("main")}
+function localDataPayload(){return {files:Array.isArray(db.files)?db.files:[],progress:(progressStore&&typeof progressStore==="object")?progressStore:{},theme:localStorage.getItem(THEME_KEY)||"purple",schemaVersion:4,updatedAt:firebase.firestore.FieldValue.serverTimestamp()}}
+function applyCloudPayload(data){
+  if(!data||typeof data!=="object")return false;
+  if(Array.isArray(data.files))db.files=data.files.filter(f=>f&&f.id&&f.name&&Array.isArray(f.words));
+  if(data.progress&&typeof data.progress==="object")progressStore=data.progress;
+  if(data.theme){localStorage.setItem(THEME_KEY,data.theme);applyTheme(data.theme,false)}
+  localStorage.setItem(DB_KEY,JSON.stringify(db));localStorage.setItem(PROGRESS_KEY,JSON.stringify(progressStore));renderAll();return true;
+}
+async function syncToCloud(){
+  if(!cloud.enabled||!cloud.ready||!cloud.user||cloud.syncing)return;
+  cloud.syncing=true;const token=++cloudWriteToken;setAuthStatus("Đang đồng bộ…");
+  try{await cloudDataRef().set(localDataPayload(),{merge:true});if(token===cloudWriteToken)setAuthStatus("Đã đồng bộ thời gian thực","online")}
+  catch(e){console.error("Cloud sync",e);setAuthStatus("Lỗi đồng bộ — dữ liệu vẫn được giữ trên thiết bị","error")}
+  finally{cloud.syncing=false}
+}
+function startCloudListener(){
+  if(!cloud.user)return;
+  if(cloud.unsubscribe)cloud.unsubscribe();
+  const ref=cloudDataRef();
+  cloud.unsubscribe=ref.onSnapshot(snap=>{
+    if(!snap.exists){setAuthStatus("Đã đăng nhập — chưa có dữ liệu cloud","online");return}
+    applyCloudPayload(snap.data()||{});setAuthStatus("Đã đồng bộ thời gian thực","online")
+  },err=>{console.error("Cloud listener",err);setAuthStatus("Không thể nghe đồng bộ thời gian thực","error")});
+}
+function authErrorMessage(e,action){
+  const map={
+    "auth/invalid-email":"Email không hợp lệ.",
+    "auth/missing-password":"Vui lòng nhập mật khẩu.",
+    "auth/weak-password":"Mật khẩu quá yếu. Hãy dùng ít nhất 6 ký tự.",
+    "auth/email-already-in-use":"Email này đã được đăng ký. Hãy đăng nhập.",
+    "auth/invalid-credential":"Email hoặc mật khẩu không đúng.",
+    "auth/user-not-found":"Không tìm thấy tài khoản với email này.",
+    "auth/wrong-password":"Mật khẩu không đúng.",
+    "auth/too-many-requests":"Có quá nhiều lần thử. Hãy chờ một lúc rồi thử lại.",
+    "auth/network-request-failed":"Không có kết nối mạng hoặc kết nối không ổn định.",
+    "auth/operation-not-allowed":"Đăng nhập Email/Mật khẩu chưa được bật trong Firebase Authentication."
+  };
+  return map[e&&e.code]||(`${action} thất bại. Mã lỗi: ${e&&e.code?e.code:"không xác định"}`);
+}
+function getAuthCredentials(){
+  const email=$("authEmail")?.value.trim().toLowerCase()||"";
+  const password=$("authPassword")?.value||"";
+  if(!email){showMessage("Vui lòng nhập Email.","warn");$("authEmail")?.focus();return null}
+  if(!password){showMessage("Vui lòng nhập mật khẩu.","warn");$("authPassword")?.focus();return null}
+  return {email,password};
+}
+async function signInEmail(){
+  if(!cloud.enabled||!cloud.auth||authActionBusy)return;
+  const c=getAuthCredentials();if(!c)return;
+  authActionBusy=true;setAuthStatus("Đang đăng nhập…");
+  try{await cloud.auth.signInWithEmailAndPassword(c.email,c.password);$("authPassword").value="";showMessage("Đăng nhập thành công. Đang đồng bộ dữ liệu…","ok")}
+  catch(e){console.error("Email sign-in",e);const msg=authErrorMessage(e,"Đăng nhập");setAuthStatus(msg,"error");showMessage(msg,"error")}
+  finally{authActionBusy=false}
+}
+async function registerEmail(){
+  if(!cloud.enabled||!cloud.auth||authActionBusy)return;
+  const c=getAuthCredentials();if(!c)return;
+  if(c.password.length<6){showMessage("Mật khẩu phải có ít nhất 6 ký tự.","warn");return}
+  authActionBusy=true;setAuthStatus("Đang tạo tài khoản…");
+  try{await cloud.auth.createUserWithEmailAndPassword(c.email,c.password);$("authPassword").value="";showMessage("Đăng ký thành công. Dữ liệu sẽ được đồng bộ tự động.","ok")}
+  catch(e){console.error("Email register",e);const msg=authErrorMessage(e,"Đăng ký");setAuthStatus(msg,"error");showMessage(msg,"error")}
+  finally{authActionBusy=false}
+}
+async function signOutEmail(){
+  if(!cloud.auth||authActionBusy)return;
+  authActionBusy=true;
+  try{if(cloud.unsubscribe){cloud.unsubscribe();cloud.unsubscribe=null}await cloud.auth.signOut();cloud.user=null;cloud.ready=false;updateAuthUI(null);setAuthStatus("Chưa đăng nhập — dữ liệu chỉ lưu trên thiết bị");showMessage("Đã đăng xuất.","ok")}
+  catch(e){console.error("Email sign-out",e);setAuthStatus("Không thể đăng xuất","error")}
+  finally{authActionBusy=false}
+}
+async function prepareCloudForUser(user){
+  cloud.user=user;cloud.ready=false;
+  if(cloud.unsubscribe){cloud.unsubscribe();cloud.unsubscribe=null}
+  updateAuthUI(user);
+  try{
+    setAuthStatus("Đang kiểm tra dữ liệu tài khoản…");
+    const ref=cloudDataRef();
+    const snap=await ref.get();
+    if(snap.exists&&snap.data()){applyCloudPayload(snap.data()||{});setAuthStatus("Đã tải dữ liệu tài khoản","online")}
+    else{await ref.set(localDataPayload(),{merge:true});setAuthStatus("Đã tạo dữ liệu đồng bộ","online")}
+    cloud.ready=true;
+    startCloudListener();
+    setAuthStatus("Đã đồng bộ thời gian thực","online");
+  }catch(e){
+    console.error("Cloud user init",e);cloud.ready=false;setAuthStatus("Đồng bộ chưa sẵn sàng — vẫn giữ dữ liệu trên thiết bị","error");showMessage("Không thể tải dữ liệu cloud. Dữ liệu trên thiết bị vẫn được giữ nguyên.","warn")
+  }
+}
+async function initCloud(){
+  updateAuthUI(null);
+  const loginBtn=$("emailLoginBtn"),registerBtn=$("emailRegisterBtn"),logoutBtn=$("emailLogoutBtn");
+  if(loginBtn)loginBtn.onclick=signInEmail;
+  if(registerBtn)registerBtn.onclick=registerEmail;
+  if(logoutBtn)logoutBtn.onclick=signOutEmail;
+  [$("authEmail"),$("authPassword")].forEach(el=>el&&el.addEventListener("keydown",e=>{if(e.key==="Enter")signInEmail()}));
+  if(!firebaseConfigured()){setAuthStatus("Firebase chưa được cấu hình — dữ liệu chỉ lưu trên thiết bị","error");return}
+  try{
+    if(!firebase.apps.length)firebase.initializeApp(window.FIREBASE_CONFIG);
+    cloud.enabled=true;cloud.db=firebase.firestore();cloud.auth=firebase.auth();
+    cloud.db.enablePersistence({synchronizeTabs:true}).catch(e=>console.warn("Firestore offline persistence:",e.code||e.message));
+    await cloud.auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
+    cloud.auth.onAuthStateChanged(async user=>{
+      if(!user){cloud.user=null;cloud.ready=false;if(cloud.unsubscribe){cloud.unsubscribe();cloud.unsubscribe=null}updateAuthUI(null);setAuthStatus("Chưa đăng nhập — dữ liệu chỉ lưu trên thiết bị");return}
+      await prepareCloudForUser(user);
+    });
+  }catch(e){console.error("Firebase init",e);setAuthStatus("Firebase chưa sẵn sàng — dữ liệu chỉ lưu trên thiết bị","error")}
+}
+
+function fileById(id){return db.files.find(f=>f.id===id)||null}
+function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+
+async function readFile(file){
+  const ext=file.name.toLowerCase().split(".").pop();
+  if(ext==="txt"||ext==="csv")return await file.text();
+  if(ext==="docx"){
+    if(!window.mammoth)throw Error("Mammoth.js chưa tải xong.");
+    const r=await mammoth.extractRawText({arrayBuffer:await file.arrayBuffer()});
+    return r.value||"";
+  }
+  throw Error("Định dạng không hỗ trợ.");
+}
+function parseWords(text){
+  const rows=[];let invalid=0;
+  text.replace(/^\uFEFF/,"").split(/\r?\n/).forEach((line,i)=>{
+    if(!line.trim())return;
+    const p=line.split("|").map(x=>x.trim());
+    // Tương thích ngược: 3 cột cũ vẫn hợp lệ; cột 4 là câu ví dụ và không bắt buộc.
+    if(p.length<3||!p[0]||!p[1]||!p[2]){invalid++;console.warn("Dòng không hợp lệ",i+1,line);return}
+    rows.push({id:uid(),word:p[0],type:p[1],meaning:p[2],example:p.slice(3).join("|").trim()});
+  });
+  return {rows,invalid};
+}
+$("fileInput").addEventListener("change",async e=>{
+  const file=e.target.files[0];if(!file)return;
+  try{
+    const name=file.name.replace(/\.[^.]+$/,"").trim();
+    if(!name){showMessage("Tên file không hợp lệ.","err");return}
+    if(db.files.some(f=>norm(f.name)===norm(name))){showMessage(`Tên chủ đề "${name}" đã tồn tại. Hãy đổi tên file trước khi tải lên.`,"err");return}
+    const parsed=parseWords(await readFile(file));
+    if(!parsed.rows.length){showMessage("File không có dòng hợp lệ. Định dạng: Từ | Từ loại | Nghĩa.","err");return}
+    db.files.push({id:uid(),name,source:file.name,createdAt:new Date().toISOString(),words:parsed.rows});
+    save();renderAll();openFile(db.files.at(-1).id);
+    showMessage(`Đã thêm bài tập "${name}" với ${parsed.rows.length} từ.`+(parsed.invalid?` Bỏ qua ${parsed.invalid} dòng lỗi.`:""),parsed.invalid?"warn":"ok");
+  }catch(err){console.error(err);showMessage("Không thể đọc file: "+err.message,"err")}
+  finally{e.target.value=""}
+});
+
+function renderAll(){
+  $("fileCount").textContent=db.files.length;
+  $("wordCount").textContent=db.files.reduce((n,f)=>n+f.words.length,0);
+  renderFileGrid();renderManageGrid();renderDetail();
+  updateThemeLabel();
+}
+function fileMatches(f,q){return !q||norm(f.name).includes(norm(q))||norm(f.source||"").includes(norm(q))}
+function fileCard(f,manage=false){
+  return `<div class="file-card">
+    <h3>📘 ${escapeHtml(f.name)}</h3>
+    <div class="file-meta">${f.words.length} từ · ${escapeHtml(f.source||"file")}${progressFor(f.id).quiz?.attempts||progressFor(f.id).fill?.attempts||progressFor(f.id).recall?.attempts?` · Đã luyện ${((progressFor(f.id).quiz?.attempts||0)+(progressFor(f.id).fill?.attempts||0)+(progressFor(f.id).recall?.attempts||0))} lượt`:""}</div>
+    <div class="row">
+      <button class="btn primary" data-open="${f.id}">▶ Luyện tập</button>
+      ${manage?`<button class="btn secondary" data-detail="${f.id}">🔍 Chi tiết</button>
+      <button class="btn danger" data-delete-file="${f.id}">🗑 Xóa file</button>`:""}
+    </div>
+  </div>`;
+}
+function renderFileGrid(){
+  const q=$("librarySearch").value;
+  const list=db.files.filter(f=>fileMatches(f,q));
+  $("fileGrid").innerHTML=list.length?list.map(f=>fileCard(f)).join(""):`<div class="empty">Chưa có bài tập phù hợp.</div>`;
+  $("fileGrid").querySelectorAll("[data-open]").forEach(b=>b.onclick=()=>openFile(b.dataset.open));
+}
+function renderManageGrid(){
+  const q=$("manageSearch").value;
+  const list=db.files.filter(f=>fileMatches(f,q));
+  $("manageGrid").innerHTML=list.length?list.map(f=>fileCard(f,true)).join(""):`<div class="empty">Không tìm thấy file.</div>`;
+  $("manageGrid").querySelectorAll("[data-open]").forEach(b=>b.onclick=()=>openFile(b.dataset.open));
+  $("manageGrid").querySelectorAll("[data-detail]").forEach(b=>openDetailOnClick(b));
+  $("manageGrid").querySelectorAll("[data-delete-file]").forEach(b=>b.onclick=()=>deleteFile(b.dataset.deleteFile));
+}
+function openDetailOnClick(b){b.onclick=()=>openDetail(b.dataset.detail)}
+
+function activate(view){
+  document.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));
+  $(view).classList.add("active");
+  document.querySelectorAll(".nav-btn").forEach(b=>b.classList.toggle("active",b.dataset.view===view));
+}
+document.querySelectorAll(".nav-btn").forEach(b=>b.onclick=()=>activate(b.dataset.view));
+$("librarySearch").oninput=renderFileGrid;$("manageSearch").oninput=renderManageGrid;
+
+function openFile(id){
+  const f=fileById(id);if(!f)return;
+  activeFileId=id;flashIndex=progressFor(id).flashIndex||0;selectedDetail.clear();
+  activate("flashcard");startFlash();startQuiz();startFill();startRecall(false);
+}
+function backLibrary(){activate("library");renderAll()}
+$("backLibrary1").onclick=backLibrary;$("backLibrary2").onclick=backLibrary;$("backLibrary3").onclick=backLibrary;$("backLibrary4").onclick=backLibrary;
+
+function startFlash(){const f=fileById(activeFileId);$("activeFileFlash").textContent=f?f.name:"";$("flashArea").classList.toggle("hidden",!f||!f.words.length);$("flashEmpty").classList.toggle("hidden",!!f&&f.words.length>0);renderFlash()}
+function renderFlash(){
+  const f=fileById(activeFileId);if(!f||!f.words.length)return;
+  flashIndex=(flashIndex+f.words.length)%f.words.length;const w=f.words[flashIndex];
+  const enToVi=flashDirection==="en-vi";
+  const flashFrontLabel=$("flashFrontLabel");
+  const flashBackLabel=$("flashBackLabel");
+  if(flashFrontLabel)flashFrontLabel.textContent=enToVi?"TIẾNG ANH":"TIẾNG VIỆT";
+  if(flashBackLabel)flashBackLabel.textContent=enToVi?"TIẾNG VIỆT":"TIẾNG ANH";
+  $("flashWord").textContent=enToVi?w.word:w.meaning;
+  $("flashType").textContent=enToVi?w.type:"";
+  $("flashType").classList.toggle("hidden",!enToVi);
+  $("flashMeaning").textContent=enToVi?w.meaning:w.word;
+
+  // Cột 4 có định dạng: Từ vựng | Từ loại | Nghĩa | Ví dụ.
+  // Hiển thị câu ví dụ ở mặt sau cho cả hai chiều Flashcard.
+  const example=$("flashExample");
+  if(example){
+    const text=String(w.example||"").trim();
+    example.textContent=text;
+    example.classList.toggle("hidden",!text);
+  }
+
+  progressFor(activeFileId).flashIndex=flashIndex;
+  saveProgress();
+  $("flashCounter").textContent=`${flashIndex+1} / ${f.words.length}`;
+  $("flashInner").classList.remove("flip");
+}
+$("flashInner").onclick=()=>$("flashInner").classList.toggle("flip");
+$("flipFlash").onclick=()=>$("flashInner").classList.toggle("flip");
+$("nextFlash").onclick=()=>{flashIndex++;renderFlash()};
+$("prevFlash").onclick=()=>{flashIndex--;renderFlash()};
+document.querySelectorAll("[data-flash-direction]").forEach(b=>b.onclick=()=>{
+  flashDirection=b.dataset.flashDirection;
+  document.querySelectorAll("[data-flash-direction]").forEach(x=>x.classList.toggle("active",x.dataset.flashDirection===flashDirection));
+  renderFlash();
+});
+
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
+
+function getQuestionLimit(selectId){
+  const value=Number($(selectId)?.value);
+  return Number.isFinite(value)&&value>0?Math.floor(value):DEFAULT_QUESTION_LIMIT;
+}
+
+function limitQuestions(words,limit){
+  // limit <= 0 nghĩa là không giới hạn: giữ toàn bộ từ.
+  return limit>0?words.slice(0,Math.min(limit,words.length)):words;
+}
+
+function makeQuizItems(words,limit=DEFAULT_QUESTION_LIMIT){
+  return shuffle([...limitQuestions(words,limit)]).map(answer=>{
+    const wrong=shuffle(words.filter(x=>x.id!==answer.id)).slice(0,3);
+    return {answer,options:shuffle([answer,...wrong])}
+  });
+}
+function startQuiz(){
+  const f=fileById(activeFileId);$("activeFileQuiz").textContent=f?f.name:"";
+  $("quizEmpty").classList.toggle("hidden",!!f&&f.words.length>=4);$("quizArea").classList.toggle("hidden",!(f&&f.words.length>=4));$("quizResult").classList.add("hidden");
+  if(!f||f.words.length<4)return;
+  quiz={items:makeQuizItems(f.words,getQuestionLimit("quizLimit")),index:0,score:0,answers:[],locked:false};renderQuiz();
+}
+function renderQuiz(){
+  if(quiz.index>=quiz.items.length){recordActivity("quiz",true);showResult("quiz");return}
+  const q=quiz.items[quiz.index];quiz.locked=false;
+  const enToVi=quizDirection==="en-vi";
+  $("quizCounter").textContent=`Câu ${quiz.index+1}/${quiz.items.length}`;
+  $("quizProgress").style.width=`${quiz.index/quiz.items.length*100}%`;
+  $("quizQuestion").textContent=enToVi
+    ? `Nghĩa của "${q.answer.word}" là gì?`
+    : `Từ tiếng Anh nào có nghĩa là "${q.answer.meaning}"?`;
+  $("quizOptions").innerHTML=q.options.map((o,i)=>
+    `<button class="option" data-q="${i}">${escapeHtml(enToVi?o.meaning:o.word)}</button>`
+  ).join("");
+  $("quizOptions").querySelectorAll(".option").forEach((b,i)=>b.onclick=()=>answerQuiz(i));
+}
+function answerQuiz(i){
+  if(quiz.locked)return;quiz.locked=true;const q=quiz.items[quiz.index],correct=q.options[i].id===q.answer.id;
+  if(correct)quiz.score++;
+  quiz.answers.push({
+    word:q.answer.word,
+    correct,
+    expected:quizDirection==="en-vi"?q.answer.meaning:q.answer.word,
+    given:quizDirection==="en-vi"?q.options[i].meaning:q.options[i].word
+  });
+  [...$("quizOptions").children].forEach((b,k)=>{b.disabled=true;if(q.options[k].id===q.answer.id)b.classList.add("correct");if(k===i&&!correct)b.classList.add("wrong")});
+  recordActivity("quiz");setTimeout(()=>{quiz.index++;recordActivity("quiz");renderQuiz()},500);
+}
+
+document.querySelectorAll("[data-quiz-direction]").forEach(b=>b.onclick=()=>{
+  quizDirection=b.dataset.quizDirection;
+  document.querySelectorAll("[data-quiz-direction]").forEach(x=>x.classList.toggle("active",x.dataset.quizDirection===quizDirection));
+  if(fileById(activeFileId))startQuiz();
+});
+
+function sentenceFor(w){
+  // Ưu tiên câu ví dụ được nạp từ file. File cũ không có example vẫn dùng câu mẫu cũ.
+  if(w.example){
+    const example=String(w.example).trim();
+    const escapedWord=String(w.word).replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+    const wordPattern=new RegExp(`\\b${escapedWord}\\b`,"i");
+    if(wordPattern.test(example)){
+      return escapeHtml(example).replace(
+        new RegExp(`\\b${escapedWord}\\b`,"i"),
+        '<span class="blank">________</span>'
+      );
+    }
+    return escapeHtml(example);
+  }
+
+  const t=norm(w.type);
+  if(t.includes("verb"))return `I decided to <span class="blank">________</span> today.`;
+  if(t.includes("adjective"))return `The situation is very <span class="blank">________</span>.`;
+  if(t.includes("adverb"))return `She completed the task <span class="blank">________</span>.`;
+  if(t.includes("noun"))return `We discussed the <span class="blank">________</span> in class.`;
+  return `I learned a new word: <span class="blank">________</span>.`;
+}
+function startFill(){
+  const f=fileById(activeFileId);$("activeFileFill").textContent=f?f.name:"";$("fillEmpty").classList.toggle("hidden",!f||!f.words.length);$("fillArea").classList.toggle("hidden",!(f&&f.words.length));$("fillResult").classList.add("hidden");
+  if(!f||!f.words.length)return;
+  fill={items:shuffle([...limitQuestions(f.words,getQuestionLimit("fillLimit"))]),index:0,score:0,answers:[],locked:false};renderFill();
+}
+function renderFill(){
+  if(fill.index>=fill.items.length){recordActivity("fill",true);showResult("fill");return}
+  const w=fill.items[fill.index];
+  if(!w){fill.index=fill.items.length;renderFill();return}
+  fill.locked=false;
+  $("fillCounter").textContent=`Câu ${fill.index+1}/${fill.items.length}`;
+  $("fillProgress").style.width=`${fill.index/fill.items.length*100}%`;
+  $("fillSentence").innerHTML=sentenceFor(w);
+  $("fillAnswer").value="";
+  const fb=$("fillFeedback");
+  if(fb){fb.className="recall-feedback hidden";fb.innerHTML=""}
+  $("fillAnswer").focus();
+}
+
+function submitFill(){
+  if(fill.locked)return;
+  const w=fill.items[fill.index];
+  if(!w)return;
+
+  const input=$("fillAnswer");
+  const given=String(input.value||"").trim();
+  if(!given){showMessage("Hãy nhập câu trả lời.","warn");input.focus();return}
+
+  fill.locked=true;
+  // trim + không phân biệt hoa thường + gom khoảng trắng thừa.
+  const correct=norm(given)===norm(w.word);
+  if(correct)fill.score++;
+  fill.answers.push({word:w.word,correct,expected:w.word,given});
+
+  const fb=$("fillFeedback");
+  if(fb){
+    fb.className="recall-feedback "+(correct?"ok":"bad");
+    fb.innerHTML=correct
+      ?"✓ Chính xác!"
+      :`✗ Chưa đúng. Đáp án: <b>${escapeHtml(w.word)}</b>`;
+  }
+
+  recordActivity("fill");
+  setTimeout(()=>{
+    fill.index++;
+    recordActivity("fill");
+    renderFill();
+  },450);
+}
+
+$("submitFill").onclick=submitFill;
+$("fillAnswer").addEventListener("keydown",e=>{
+  if(e.key==="Enter"){
+    e.preventDefault();
+    submitFill();
+  }
+});
+
+function startRecall(reset=true){
+  const f=fileById(activeFileId);
+  $("activeFileRecall").textContent=f?f.name:"";
+  $("recallEmpty").classList.toggle("hidden",!!f&&f.words.length>0);
+  if(!f||!f.words.length){$("recallSetup").classList.add("hidden");$("recallArea").classList.add("hidden");$("recallResult").classList.add("hidden");return}
+  $("recallSetup").classList.remove("hidden");$("recallResult").classList.add("hidden");$("recallArea").classList.add("hidden");
+  if(reset){
+    recall={items:shuffle([...limitQuestions(f.words,getQuestionLimit("recallLimit"))]),index:0,score:0,answers:[],locked:false,direction:recall.direction||"en-vi"};
+  }
+  document.querySelectorAll(".direction-card").forEach(b=>b.classList.toggle("active",b.dataset.direction===recall.direction));
+}
+function beginRecall(){
+  const f=fileById(activeFileId);if(!f||!f.words.length)return;
+  recall={items:shuffle([...limitQuestions(f.words,getQuestionLimit("recallLimit"))]),index:0,score:0,answers:[],locked:false,direction:recall.direction||"en-vi"};
+  $("recallSetup").classList.add("hidden");$("recallResult").classList.add("hidden");$("recallArea").classList.remove("hidden");renderRecall();
+}
+function renderRecall(){
+  if(recall.index>=recall.items.length){recordActivity("recall",true);showResult("recall");return}
+  const w=recall.items[recall.index];recall.locked=false;
+  $("recallCounter").textContent=`Câu ${recall.index+1}/${recall.items.length}`;
+  $("recallProgress").style.width=`${recall.index/recall.items.length*100}%`;
+  $("recallPrompt").textContent=recall.direction==="en-vi"?w.word:w.meaning;
+  $("recallAnswer").value="";$("recallAnswer").placeholder=recall.direction==="en-vi"?"Nhập nghĩa tiếng Việt...":"Nhập từ tiếng Anh...";
+  $("recallFeedback").className="";$("recallFeedback").innerHTML="";$("recallAnswer").focus();
+}
+function submitRecall(){
+  if(recall.locked)return;
+  const w=recall.items[recall.index],given=$("recallAnswer").value.trim();
+  if(!given){showMessage("Hãy nhập câu trả lời.","warn");return}
+  recall.locked=true;
+  const expected=recall.direction==="en-vi"?w.meaning:w.word;
+  const correct=norm(given)===norm(expected);
+  if(correct)recall.score++;
+  recall.answers.push({word:recall.direction==="en-vi"?w.word:w.meaning,correct,expected,given});
+  const fb=$("recallFeedback");fb.className="recall-feedback "+(correct?"ok":"bad");
+  fb.innerHTML=correct?`✓ Chính xác!`:`✗ Chưa đúng. Đáp án: <b>${escapeHtml(expected)}</b>`;
+  recordActivity("recall");
+  setTimeout(()=>{recall.index++;renderRecall()},900);
+}
+$("startRecall").onclick=beginRecall;
+$("submitRecall").onclick=submitRecall;
+$("recallAnswer").addEventListener("keydown",e=>{if(e.key==="Enter")submitRecall()});
+document.querySelectorAll(".direction-card").forEach(b=>b.onclick=()=>{
+  recall.direction=b.dataset.direction;
+  document.querySelectorAll(".direction-card").forEach(x=>x.classList.toggle("active",x.dataset.direction===recall.direction));
+});
+$("recallLimit").onchange=()=>{if(fileById(activeFileId))startRecall(false)};
+
+function showResult(kind){
+  const data=kind==="quiz"?quiz:kind==="fill"?fill:recall,total=data.items.length,percent=total?Math.round(data.score/total*100):0;
+  const isRecall=kind==="recall";
+  const box=$(kind==="quiz"?"quizResult":kind==="fill"?"fillResult":"recallResult");
+  const area=$(kind==="quiz"?"quizArea":kind==="fill"?"fillArea":"recallArea");
+  area.classList.add("hidden");box.classList.remove("hidden");
+  if(isRecall)$("recallSetup").classList.remove("hidden");
+  const rows=data.answers.map(x=>`<div class="result-item ${x.correct?"ok":"bad"}"><b>${x.correct?"✓":"✗"} ${escapeHtml(x.word)}</b><br><span class="muted">Đáp án: ${escapeHtml(x.expected)}</span>${x.correct?"":`<br><span>Trả lời: ${escapeHtml(x.given)}</span>`}</div>`).join("");
+  box.innerHTML=`<div class="score">${data.score}/${total}</div><p>Đúng ${percent}%</p><div class="result-list">${rows}</div><br><button class="btn primary" data-retry="${kind}">🔄 Làm lại</button>`;
+  box.querySelector("[data-retry]").onclick=kind==="quiz"?startQuiz:kind==="fill"?startFill:beginRecall;
+}
+
+function deleteFile(id){
+  const f=fileById(id);if(!f)return;
+  if(!confirm(`Xóa toàn bộ bài tập "${f.name}" và ${f.words.length} từ?`))return;
+  db.files=db.files.filter(x=>x.id!==id);delete progressStore[id];if(activeFileId===id)activeFileId=null;save();renderAll();showMessage(`Đã xóa file "${f.name}".`,"ok");
+}
+function openDetail(id){
+  activeFileId=id;selectedDetail.clear();activate("detail");renderDetail();
+}
+function renderDetail(){
+  const f=fileById(activeFileId);if(!f){$("detailTitle").textContent="Chưa chọn file";$("detailBody").innerHTML="";$("deleteWords").disabled=true;return}
+  $("detailTitle").textContent="📘 "+f.name;$("detailMeta").textContent=`${f.words.length} từ`;
+  const q=norm($("detailSearch").value);const rows=f.words.map((w,i)=>({w,i})).filter(x=>!q||norm(x.w.word).includes(q)||norm(x.w.type).includes(q)||norm(x.w.meaning).includes(q));
+  $("detailBody").innerHTML=rows.length?rows.map(x=>`<tr><td><input class="checkbox detail-check" data-i="${x.i}" type="checkbox" ${selectedDetail.has(x.i)?"checked":""}></td><td><b>${escapeHtml(x.w.word)}</b></td><td><span class="badge">${escapeHtml(x.w.type)}</span></td><td>${escapeHtml(x.w.meaning)}</td><td><button class="btn danger" data-one="${x.i}">Xóa</button></td></tr>`).join(""):`<tr><td colspan="5" class="empty">Không có từ phù hợp.</td></tr>`;
+  document.querySelectorAll(".detail-check").forEach(c=>c.onchange=()=>{const i=+c.dataset.i;c.checked?selectedDetail.add(i):selectedDetail.delete(i);updateDetailControls()});
+  $("detailBody").querySelectorAll("[data-one]").forEach(b=>b.onclick=()=>deleteOneWord(+b.dataset.one));
+  updateDetailControls();
+}
+$("detailSearch").oninput=renderDetail;
+$("detailSelectAll").onchange=()=>{
+  const f=fileById(activeFileId),q=norm($("detailSearch").value);if(!f)return;
+  f.words.forEach((w,i)=>{if(!q||norm(w.word).includes(q)||norm(w.type).includes(q)||norm(w.meaning).includes(q))$("detailSelectAll").checked?selectedDetail.add(i):selectedDetail.delete(i)});
+  renderDetail();
+};
+function updateDetailControls(){$("deleteWords").disabled=!selectedDetail.size;$("detailSelectAll").indeterminate=selectedDetail.size>0}
+function deleteOneWord(i){
+  const f=fileById(activeFileId);if(!f)return;if(!confirm(`Xóa "${f.words[i]?.word}"?`))return;
+  f.words.splice(i,1);selectedDetail=new Set([...selectedDetail].filter(x=>x!==i).map(x=>x>i?x-1:x));save();renderAll();renderDetail();
+}
+$("deleteWords").onclick=()=>{
+  const f=fileById(activeFileId);if(!f||!selectedDetail.size)return;if(!confirm(`Xóa ${selectedDetail.size} từ đã chọn?`))return;
+  [...selectedDetail].sort((a,b)=>b-a).forEach(i=>f.words.splice(i,1));selectedDetail.clear();save();renderAll();renderDetail();
+};
+$("backManage").onclick=()=>activate("manage");
+
+function mergeFiles(){
+  const checks=[...document.querySelectorAll(".merge-check:checked")].map(x=>x.value);
+  if(checks.length<2){showMessage("Hãy chọn ít nhất 2 file để gộp.","warn");return}
+  const names=checks.map(id=>fileById(id)?.name).filter(Boolean);
+  let name=prompt("Tên chủ đề mới:",names.join(" + "));if(name===null)return;name=name.trim();
+  if(!name){showMessage("Tên chủ đề không được để trống.","err");return}
+  if(db.files.some(f=>norm(f.name)===norm(name))){showMessage(`Tên chủ đề "${name}" đã tồn tại.`,"err");return}
+  const words=[],seen=new Set();
+  checks.forEach(id=>fileById(id)?.words.forEach(w=>{const k=norm(w.word)+"|"+norm(w.type)+"|"+norm(w.meaning);if(!seen.has(k)){seen.add(k);words.push({...w,id:uid()})}}));
+  db.files.push({id:uid(),name,source:"Merged",createdAt:new Date().toISOString(),words});save();renderAll();showMessage(`Đã gộp ${checks.length} file thành "${name}" (${words.length} từ).`,"ok");
+}
+function renderManageGridWithMerge(){
+  const q=$("manageSearch").value,list=db.files.filter(f=>fileMatches(f,q));
+  $("manageGrid").innerHTML=list.length?list.map(f=>`<div class="file-card"><div class="row"><input class="checkbox merge-check" type="checkbox" value="${f.id}"><b>Chọn gộp</b></div><h3>📘 ${escapeHtml(f.name)}</h3><div class="file-meta">${f.words.length} từ</div><div class="row"><button class="btn primary" data-open="${f.id}">▶ Luyện tập</button><button class="btn secondary" data-detail="${f.id}">🔍 Chi tiết</button><button class="btn danger" data-delete-file="${f.id}">🗑 Xóa file</button></div></div>`).join(""):`<div class="empty">Không tìm thấy file.</div>`;
+  $("manageGrid").querySelectorAll("[data-open]").forEach(b=>b.onclick=()=>openFile(b.dataset.open));$("manageGrid").querySelectorAll("[data-detail]").forEach(b=>b.onclick=()=>openDetail(b.dataset.detail));$("manageGrid").querySelectorAll("[data-delete-file]").forEach(b=>b.onclick=()=>deleteFile(b.dataset.deleteFile));
+  $("manageGrid").insertAdjacentHTML("afterbegin",`<div style="grid-column:1/-1"><button class="btn primary" id="mergeSelected">🔗 Gộp các file đã chọn</button></div>`);
+  $("mergeSelected").onclick=mergeFiles;
+}
+renderManageGrid=renderManageGridWithMerge;
+
+function applyTheme(t,sync=true){
+  document.documentElement.dataset.theme=t==="purple"?"":t;
+  localStorage.setItem(THEME_KEY,t);
+  document.querySelectorAll(".theme-btn").forEach(b=>b.classList.toggle("active",b.dataset.themeChoice===t));
+  updateThemeLabel();
+  if(sync) scheduleCloudSync();
+}
+function updateThemeLabel(){$("themeLabel").textContent=localStorage.getItem(THEME_KEY)||"purple"}
+document.querySelectorAll(".theme-btn").forEach(b=>b.onclick=()=>applyTheme(b.dataset.themeChoice));
+$("quizLimit").onchange=()=>{if(fileById(activeFileId))startQuiz()};
+$("fillLimit").onchange=()=>{if(fileById(activeFileId))startFill()};
+
+document.addEventListener("keydown",e=>{
+  if(["INPUT","TEXTAREA"].includes(document.activeElement?.tagName))return;
+  if($("flashcard").classList.contains("active")){
+    if(e.key==="ArrowRight"){flashIndex++;renderFlash()}if(e.key==="ArrowLeft"){flashIndex--;renderFlash()}if(e.key===" "){e.preventDefault();$("flashInner").classList.toggle("flip")}
+  }
+});
+
+(function init(){
+  load();loadProgress();applyTheme(localStorage.getItem(THEME_KEY)||"purple");
+$("quizLimit").value="0";$("fillLimit").value="0";$("recallLimit").value="0";
+renderAll();
+  initCloud();
+  if("serviceWorker" in navigator) navigator.serviceWorker.register("./sw.js").catch(console.warn);
+})();
+</script>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js')
+        .then((registration) => {
+          console.log('Service Worker đăng ký thành công với scope: ', registration.scope);
+        })
+        .catch((error) => {
+          console.log('Service Worker đăng ký thất bại: ', error);
+        });
+    });
+  }
+</script>
+</body>
+</html>
