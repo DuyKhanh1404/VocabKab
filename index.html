@@ -95,6 +95,9 @@ h2{margin-top:0}.muted{color:var(--muted)}
 .recall-feedback{margin:15px auto;padding:14px;border-radius:10px;max-width:650px;text-align:center}
 .recall-feedback.ok{background:#dcfce7;color:#166534}.recall-feedback.bad{background:#fee2e2;color:#991b1b}
 @media(max-width:750px){.recall-config{grid-template-columns:1fr}.recall-prompt{font-size:31px}}
+.direction-toggle{display:flex;gap:6px;align-items:center;padding:4px;border:1px solid var(--border);border-radius:11px;background:var(--card)}
+.direction-toggle .direction-btn{border:0;border-radius:8px;padding:8px 12px;background:transparent;color:var(--muted);font-weight:700;min-height:40px}
+.direction-toggle .direction-btn.active{background:var(--primary);color:#fff}
 
 
 
@@ -201,7 +204,13 @@ input,select{max-width:100%}
 
   <section id="flashcard" class="view"><div class="panel">
     <div class="toolbar"><div><h2 style="margin:0">🃏 Flashcard</h2><span id="activeFileFlash" class="muted"></span></div>
-      <button class="btn secondary" id="backLibrary1">← Chọn file khác</button></div>
+      <div class="row">
+        <div class="direction-toggle" aria-label="Chiều ngôn ngữ Flashcard">
+          <button type="button" class="direction-btn active" data-flash-direction="en-vi">🇬🇧 Anh → Việt</button>
+          <button type="button" class="direction-btn" data-flash-direction="vi-en">🇻🇳 Việt → Anh</button>
+        </div>
+        <button class="btn secondary" id="backLibrary1">← Chọn file khác</button>
+      </div></div>
     <div id="flashEmpty" class="empty">Hãy chọn một bài tập.</div>
     <div id="flashArea" class="hidden">
       <div class="flash"><div id="flashInner" class="flash-inner">
@@ -214,7 +223,11 @@ input,select{max-width:100%}
   </div></section>
 
   <section id="quiz" class="view"><div class="panel">
-    <div class="toolbar"><div><h2 style="margin:0">📝 Quiz 4 đáp án</h2><span id="activeFileQuiz" class="muted"></span></div><div class="row"><label class="muted">Số câu <select id="quizLimit" class="question-limit"><option value="0">Tất cả</option><option value="10">10</option><option value="20">20</option><option value="50">50</option></select></label><button class="btn secondary" id="backLibrary2">← Chọn file khác</button></div></div>
+    <div class="toolbar"><div><h2 style="margin:0">📝 Quiz 4 đáp án</h2><span id="activeFileQuiz" class="muted"></span></div><div class="row">
+         <div class="direction-toggle" aria-label="Chiều ngôn ngữ Quiz">
+           <button type="button" class="direction-btn active" data-quiz-direction="en-vi">🇬🇧 Anh → Việt</button>
+           <button type="button" class="direction-btn" data-quiz-direction="vi-en">🇻🇳 Việt → Anh</button>
+         </div><label class="muted">Số câu <select id="quizLimit" class="question-limit"><option value="0">Tất cả</option><option value="10">10</option><option value="20">20</option><option value="50">50</option></select></label><button class="btn secondary" id="backLibrary2">← Chọn file khác</button></div></div>
     <div id="quizEmpty" class="empty">Một bài tập cần ít nhất 4 từ để Quiz.</div>
     <div id="quizArea" class="hidden">
       <div class="progress"><i id="quizProgress" style="width:0%"></i></div>
@@ -317,6 +330,8 @@ const DEFAULT_QUESTION_LIMIT=0;
 let db={files:[]};
 let activeFileId=null, selectedDetail=new Set();
 let flashIndex=0;
+let flashDirection="en-vi";
+let quizDirection="en-vi";
 let quiz={items:[],index:0,score:0,answers:[],locked:false};
 let fill={items:[],index:0,score:0,answers:[],locked:false};
 let recall={items:[],index:0,score:0,answers:[],locked:false,direction:"en-vi"};
@@ -501,9 +516,10 @@ function parseWords(text){
   const rows=[];let invalid=0;
   text.replace(/^\uFEFF/,"").split(/\r?\n/).forEach((line,i)=>{
     if(!line.trim())return;
-    const p=line.split("|");
-    if(p.length!==3||!p.every(x=>x.trim())){invalid++;console.warn("Dòng không hợp lệ",i+1,line);return}
-    rows.push({id:uid(),word:p[0].trim(),type:p[1].trim(),meaning:p[2].trim()});
+    const p=line.split("|").map(x=>x.trim());
+    // Tương thích ngược: 3 cột cũ vẫn hợp lệ; cột 4 là câu ví dụ và không bắt buộc.
+    if(p.length<3||!p[0]||!p[1]||!p[2]){invalid++;console.warn("Dòng không hợp lệ",i+1,line);return}
+    rows.push({id:uid(),word:p[0],type:p[1],meaning:p[2],example:p.slice(3).join("|").trim()});
   });
   return {rows,invalid};
 }
@@ -576,10 +592,27 @@ function startFlash(){const f=fileById(activeFileId);$("activeFileFlash").textCo
 function renderFlash(){
   const f=fileById(activeFileId);if(!f||!f.words.length)return;
   flashIndex=(flashIndex+f.words.length)%f.words.length;const w=f.words[flashIndex];
-  $("flashWord").textContent=w.word;$("flashType").textContent=w.type;progressFor(activeFileId).flashIndex=flashIndex;saveProgress();$("flashMeaning").textContent=w.meaning;$("flashCounter").textContent=`${flashIndex+1} / ${f.words.length}`;$("flashInner").classList.remove("flip");
+  const enToVi=flashDirection==="en-vi";
+  $("flashFrontLabel").textContent=enToVi?"TIẾNG ANH":"TIẾNG VIỆT";
+  $("flashBackLabel").textContent=enToVi?"TIẾNG VIỆT":"TIẾNG ANH";
+  $("flashWord").textContent=enToVi?w.word:w.meaning;
+  $("flashType").textContent=enToVi?w.type:"";
+  $("flashType").classList.toggle("hidden",!enToVi);
+  $("flashMeaning").textContent=enToVi?w.meaning:w.word;
+  progressFor(activeFileId).flashIndex=flashIndex;
+  saveProgress();
+  $("flashCounter").textContent=`${flashIndex+1} / ${f.words.length}`;
+  $("flashInner").classList.remove("flip");
 }
-$("flashInner").onclick=()=>$("flashInner").classList.toggle("flip");$("flipFlash").onclick=()=>$("flashInner").classList.toggle("flip");
-$("nextFlash").onclick=()=>{flashIndex++;renderFlash()};$("prevFlash").onclick=()=>{flashIndex--;renderFlash()};
+$("flashInner").onclick=()=>$("flashInner").classList.toggle("flip");
+$("flipFlash").onclick=()=>$("flashInner").classList.toggle("flip");
+$("nextFlash").onclick=()=>{flashIndex++;renderFlash()};
+$("prevFlash").onclick=()=>{flashIndex--;renderFlash()};
+document.querySelectorAll("[data-flash-direction]").forEach(b=>b.onclick=()=>{
+  flashDirection=b.dataset.flashDirection;
+  document.querySelectorAll("[data-flash-direction]").forEach(x=>x.classList.toggle("active",x.dataset.flashDirection===flashDirection));
+  renderFlash();
+});
 
 function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
 
@@ -607,20 +640,52 @@ function startQuiz(){
 }
 function renderQuiz(){
   if(quiz.index>=quiz.items.length){recordActivity("quiz",true);showResult("quiz");return}
-  const q=quiz.items[quiz.index];quiz.locked=false;$("quizCounter").textContent=`Câu ${quiz.index+1}/${quiz.items.length}`;$("quizProgress").style.width=`${quiz.index/quiz.items.length*100}%`;
-  $("quizQuestion").textContent=`Nghĩa của "${q.answer.word}" là gì?`;
-  $("quizOptions").innerHTML=q.options.map((o,i)=>`<button class="option" data-q="${i}">${escapeHtml(o.meaning)}</button>`).join("");
+  const q=quiz.items[quiz.index];quiz.locked=false;
+  const enToVi=quizDirection==="en-vi";
+  $("quizCounter").textContent=`Câu ${quiz.index+1}/${quiz.items.length}`;
+  $("quizProgress").style.width=`${quiz.index/quiz.items.length*100}%`;
+  $("quizQuestion").textContent=enToVi
+    ? `Nghĩa của "${q.answer.word}" là gì?`
+    : `Từ tiếng Anh nào có nghĩa là "${q.answer.meaning}"?`;
+  $("quizOptions").innerHTML=q.options.map((o,i)=>
+    `<button class="option" data-q="${i}">${escapeHtml(enToVi?o.meaning:o.word)}</button>`
+  ).join("");
   $("quizOptions").querySelectorAll(".option").forEach((b,i)=>b.onclick=()=>answerQuiz(i));
 }
 function answerQuiz(i){
   if(quiz.locked)return;quiz.locked=true;const q=quiz.items[quiz.index],correct=q.options[i].id===q.answer.id;
   if(correct)quiz.score++;
-  quiz.answers.push({word:q.answer.word,correct,expected:q.answer.meaning,given:q.options[i].meaning});
+  quiz.answers.push({
+    word:q.answer.word,
+    correct,
+    expected:quizDirection==="en-vi"?q.answer.meaning:q.answer.word,
+    given:quizDirection==="en-vi"?q.options[i].meaning:q.options[i].word
+  });
   [...$("quizOptions").children].forEach((b,k)=>{b.disabled=true;if(q.options[k].id===q.answer.id)b.classList.add("correct");if(k===i&&!correct)b.classList.add("wrong")});
   recordActivity("quiz");setTimeout(()=>{quiz.index++;recordActivity("quiz");renderQuiz()},500);
 }
 
+document.querySelectorAll("[data-quiz-direction]").forEach(b=>b.onclick=()=>{
+  quizDirection=b.dataset.quizDirection;
+  document.querySelectorAll("[data-quiz-direction]").forEach(x=>x.classList.toggle("active",x.dataset.quizDirection===quizDirection));
+  if(fileById(activeFileId))startQuiz();
+});
+
 function sentenceFor(w){
+  // Ưu tiên câu ví dụ được nạp từ file. File cũ không có example vẫn dùng câu mẫu cũ.
+  if(w.example){
+    const example=String(w.example).trim();
+    const escapedWord=String(w.word).replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+    const wordPattern=new RegExp(`\\b${escapedWord}\\b`,"i");
+    if(wordPattern.test(example)){
+      return escapeHtml(example).replace(
+        new RegExp(`\\b${escapedWord}\\b`,"i"),
+        '<span class="blank">________</span>'
+      );
+    }
+    return escapeHtml(example);
+  }
+
   const t=norm(w.type);
   if(t.includes("verb"))return `I decided to <span class="blank">________</span> today.`;
   if(t.includes("adjective"))return `The situation is very <span class="blank">________</span>.`;
