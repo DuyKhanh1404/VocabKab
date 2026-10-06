@@ -345,6 +345,7 @@ const norm=s=>String(s).trim().toLowerCase().replace(/\s+/g," ");
 function showMessage(text,type="ok"){const m=$("message");m.textContent=text;m.className="message show "+type;clearTimeout(showMessage.t);showMessage.t=setTimeout(()=>m.className="message",5500)}
 function save(){
   localStorage.setItem(DB_KEY,JSON.stringify(db));
+  if(typeof syncGuard!=="undefined")syncGuardTouchLocal();
   scheduleCloudSync();
 }
 function load(){
@@ -365,6 +366,7 @@ function progressFor(id){
 }
 function saveProgress(){
   localStorage.setItem(PROGRESS_KEY,JSON.stringify(progressStore));
+  if(typeof syncGuard!=="undefined")syncGuardTouchLocal();
   scheduleCloudSync();
 }
 function recordActivity(kind,completed=false){
@@ -384,8 +386,82 @@ let cloudTimer=null;
 let cloudWriteToken=0;
 let authActionBusy=false;
 let authReadyResolve=null;
-function scheduleCloudSync(){if(!cloud.enabled||!cloud.ready||!cloud.user||cloud.syncing)return;clearTimeout(cloudTimer);cloudTimer=setTimeout(()=>syncToCloud(),450)}
-function setAuthStatus(text,state=""){const el=$("authStatus");if(!el)return;el.innerHTML=`<span class="sync-dot ${state}"></span>${escapeHtml(text)}`}
+
+/* ============================================================
+   SYNC GUARD — lớp bảo vệ độc lập cho Firebase/Firestore.
+   - Không thay đổi cấu trúc dữ liệu cũ.
+   - Dùng một revision timestamp cho toàn bộ payload.
+   - Khóa cloud auto-save cho tới khi tải/so sánh cloud xong.
+   ============================================================ */
+const SYNC_GUARD_KEY="vocabKabSyncGuard_v1";
+const syncGuard={
+  autoSaveLocked:true,
+  localRevision:0,
+  lastRemoteRevision:0,
+  initialized:false
+};
+
+function syncGuardReadRevision(){
+  try{
+    const raw=JSON.parse(localStorage.getItem(SYNC_GUARD_KEY)||"{}");
+    syncGuard.localRevision=Number(raw.localRevision)||0;
+    syncGuard.lastRemoteRevision=Number(raw.lastRemoteRevision)||0;
+  }catch(e){
+    syncGuard.localRevision=0;
+    syncGuard.lastRemoteRevision=0;
+  }
+}
+function syncGuardWriteRevision(){
+  localStorage.setItem(SYNC_GUARD_KEY,JSON.stringify({
+    localRevision:syncGuard.localRevision,
+    lastRemoteRevision:syncGuard.lastRemoteRevision
+  }));
+}
+function syncGuardTouchLocal(){
+  const now=Date.now();
+  syncGuard.localRevision=Math.max(now,syncGuard.localRevision+1);
+  syncGuardWriteRevision();
+}
+function syncGuardTimestampMs(value){
+  if(value==null)return 0;
+  if(typeof value==="number")return Number.isFinite(value)?value:0;
+  if(typeof value==="string"){
+    const n=Date.parse(value);
+    return Number.isFinite(n)?n:0;
+  }
+  if(value.toDate){
+    const d=value.toDate();
+    return d instanceof Date&&!Number.isNaN(d.getTime())?d.getTime():0;
+  }
+  if(value.seconds!=null){
+    const n=Number(value.seconds)*1000;
+    return Number.isFinite(n)?n:0;
+  }
+  if(value instanceof Date)return value.getTime();
+  return 0;
+}
+function syncGuardRevisionFromCloud(data){
+  return syncGuardTimestampMs(data&&data.updatedAt);
+}
+function syncGuardIsNewer(remoteMs,localMs){
+  return remoteMs>localMs;
+}
+function syncGuardStatus(){
+  return syncGuard.autoSaveLocked?"Đang bảo vệ dữ liệu — chờ kiểm tra đồng bộ…":"Đã đồng bộ thời gian thực";
+}
+
+/* Chỉ khóa cloud write; localStorage vẫn hoạt động bình thường. */
+function scheduleCloudSync(){
+  if(syncGuard.autoSaveLocked)return;
+  if(!cloud.enabled||!cloud.ready||!cloud.user||cloud.syncing)return;
+  clearTimeout(cloudTimer);
+  cloudTimer=setTimeout(()=>syncToCloud(),450);
+}
+
+function setAuthStatus(text,state=""){
+  const el=$("authStatus");if(!el)return;
+  el.innerHTML=`<span class="sync-dot ${state}"></span>${escapeHtml(text)}`;
+}
 function updateAuthUI(user){
   const panel=$("authPanel"),userBox=$("authUser"),logoutBtn=$("emailLogoutBtn");
   if(!panel||!userBox||!logoutBtn)return;
@@ -394,30 +470,119 @@ function updateAuthUI(user){
 }
 function firebaseConfigured(){return !!(window.FIREBASE_CONFIG&&window.FIREBASE_CONFIG.apiKey&&window.FIREBASE_CONFIG.projectId)}
 function cloudDataRef(){return cloud.db.collection("users").doc(cloud.user.uid).collection("vocab_data").doc("main")}
-function localDataPayload(){return {files:Array.isArray(db.files)?db.files:[],progress:(progressStore&&typeof progressStore==="object")?progressStore:{},theme:localStorage.getItem(THEME_KEY)||"purple",schemaVersion:4,updatedAt:firebase.firestore.FieldValue.serverTimestamp()}}
+
+function localDataPayload(){
+  return {
+    files:Array.isArray(db.files)?db.files:[],
+    progress:(progressStore&&typeof progressStore==="object")?progressStore:{},
+    theme:localStorage.getItem(THEME_KEY)||"purple",
+    schemaVersion:4,
+    /* Không dùng serverTimestamp cho phiên bản nữa.
+       Dùng timestamp thực của lần thay đổi local để so sánh giữa thiết bị. */
+    updatedAt:new Date(Math.max(Date.now(),syncGuard.localRevision||0)).toISOString()
+  };
+}
+
 function applyCloudPayload(data){
   if(!data||typeof data!=="object")return false;
   if(Array.isArray(data.files))db.files=data.files.filter(f=>f&&f.id&&f.name&&Array.isArray(f.words));
   if(data.progress&&typeof data.progress==="object")progressStore=data.progress;
   if(data.theme){localStorage.setItem(THEME_KEY,data.theme);applyTheme(data.theme,false)}
-  localStorage.setItem(DB_KEY,JSON.stringify(db));localStorage.setItem(PROGRESS_KEY,JSON.stringify(progressStore));renderAll();return true;
+  localStorage.setItem(DB_KEY,JSON.stringify(db));
+  localStorage.setItem(PROGRESS_KEY,JSON.stringify(progressStore));
+  renderAll();
+  return true;
 }
-async function syncToCloud(){
-  if(!cloud.enabled||!cloud.ready||!cloud.user||cloud.syncing)return;
-  cloud.syncing=true;const token=++cloudWriteToken;setAuthStatus("Đang đồng bộ…");
-  try{await cloudDataRef().set(localDataPayload(),{merge:true});if(token===cloudWriteToken)setAuthStatus("Đã đồng bộ thời gian thực","online")}
-  catch(e){console.error("Cloud sync",e);setAuthStatus("Lỗi đồng bộ — dữ liệu vẫn được giữ trên thiết bị","error")}
-  finally{cloud.syncing=false}
+
+/* Ghi cloud theo transaction: nếu cloud đã có bản mới hơn thì TUYỆT ĐỐI không ghi đè. */
+async function syncToCloud(force=false){
+  if((syncGuard.autoSaveLocked&&!force)||!cloud.enabled||!cloud.ready||!cloud.user||cloud.syncing)return;
+  cloud.syncing=true;
+  const token=++cloudWriteToken;
+  setAuthStatus("Đang kiểm tra phiên bản dữ liệu…");
+  try{
+    const ref=cloudDataRef();
+    const localRevision=Math.max(Date.now(),syncGuard.localRevision||0);
+
+    const result=await cloud.db.runTransaction(async tx=>{
+      const snap=await tx.get(ref);
+      const remoteData=snap.exists?snap.data()||{}:{};
+      const remoteRevision=syncGuardRevisionFromCloud(remoteData);
+
+      if(syncGuardIsNewer(remoteRevision,localRevision)){
+        return {written:false,remoteRevision};
+      }
+
+      const payload=localDataPayload();
+      payload.updatedAt=new Date(localRevision).toISOString();
+      tx.set(ref,payload,{merge:true});
+      return {written:true,remoteRevision};
+    });
+
+    if(!result.written){
+      syncGuard.lastRemoteRevision=result.remoteRevision;
+      syncGuard.localRevision=result.remoteRevision;
+      syncGuardWriteRevision();
+      /* Không tự áp dụng ở đây: listener/prepare sẽ xử lý payload mới nhất. */
+      if(token===cloudWriteToken)setAuthStatus("Cloud mới hơn — bỏ qua ghi đè dữ liệu cũ","online");
+    }else{
+      syncGuard.localRevision=localRevision;
+      syncGuard.lastRemoteRevision=localRevision;
+      syncGuardWriteRevision();
+      if(token===cloudWriteToken)setAuthStatus("Đã đồng bộ phiên bản mới nhất","online");
+    }
+  }catch(e){
+    console.error("Cloud sync",e);
+    setAuthStatus("Lỗi đồng bộ — dữ liệu vẫn được giữ trên thiết bị","error");
+  }finally{
+    cloud.syncing=false;
+  }
 }
+
 function startCloudListener(){
   if(!cloud.user)return;
   if(cloud.unsubscribe)cloud.unsubscribe();
   const ref=cloudDataRef();
+
   cloud.unsubscribe=ref.onSnapshot(snap=>{
-    if(!snap.exists){setAuthStatus("Đã đăng nhập — chưa có dữ liệu cloud","online");return}
-    applyCloudPayload(snap.data()||{});setAuthStatus("Đã đồng bộ thời gian thực","online")
-  },err=>{console.error("Cloud listener",err);setAuthStatus("Không thể nghe đồng bộ thời gian thực","error")});
+    if(!snap.exists){
+      setAuthStatus("Đã đăng nhập — chưa có dữ liệu cloud","online");
+      return;
+    }
+
+    const data=snap.data()||{};
+    const remoteRevision=syncGuardRevisionFromCloud(data);
+    const localRevision=syncGuard.localRevision||0;
+
+    /* Trong giai đoạn khóa hoặc khi local mới hơn, không cho snapshot cũ ghi đè UI/localStorage. */
+    if(syncGuard.autoSaveLocked){
+      syncGuard.lastRemoteRevision=remoteRevision;
+      setAuthStatus("Đang kiểm tra phiên bản dữ liệu…");
+      return;
+    }
+
+    if(remoteRevision<localRevision){
+      setAuthStatus("Bỏ qua dữ liệu cloud cũ hơn","online");
+      return;
+    }
+
+    if(remoteRevision===localRevision && syncGuard.lastRemoteRevision===remoteRevision){
+      setAuthStatus("Đã đồng bộ phiên bản mới nhất","online");
+      return;
+    }
+
+    if(applyCloudPayload(data)){
+      syncGuard.lastRemoteRevision=remoteRevision;
+      syncGuard.localRevision=Math.max(localRevision,remoteRevision);
+      syncGuardWriteRevision();
+    }
+    setAuthStatus("Đã đồng bộ phiên bản mới nhất","online");
+  },err=>{
+    console.error("Cloud listener",err);
+    setAuthStatus("Không thể nghe đồng bộ thời gian thực","error");
+  });
 }
+
 function authErrorMessage(e,action){
   const map={
     "auth/invalid-email":"Email không hợp lệ.",
@@ -460,45 +625,121 @@ async function registerEmail(){
 async function signOutEmail(){
   if(!cloud.auth||authActionBusy)return;
   authActionBusy=true;
-  try{if(cloud.unsubscribe){cloud.unsubscribe();cloud.unsubscribe=null}await cloud.auth.signOut();cloud.user=null;cloud.ready=false;updateAuthUI(null);setAuthStatus("Chưa đăng nhập — dữ liệu chỉ lưu trên thiết bị");showMessage("Đã đăng xuất.","ok")}
-  catch(e){console.error("Email sign-out",e);setAuthStatus("Không thể đăng xuất","error")}
+  try{
+    if(cloud.unsubscribe){cloud.unsubscribe();cloud.unsubscribe=null}
+    await cloud.auth.signOut();
+    cloud.user=null;cloud.ready=false;
+    syncGuard.autoSaveLocked=true;
+    updateAuthUI(null);
+    setAuthStatus("Chưa đăng nhập — dữ liệu chỉ lưu trên thiết bị");
+    showMessage("Đã đăng xuất.","ok")
+  }catch(e){console.error("Email sign-out",e);setAuthStatus("Không thể đăng xuất","error")}
   finally{authActionBusy=false}
 }
+
 async function prepareCloudForUser(user){
-  cloud.user=user;cloud.ready=false;
+  cloud.user=user;
+  cloud.ready=false;
+  syncGuard.autoSaveLocked=true;
+  syncGuardReadRevision();
+
   if(cloud.unsubscribe){cloud.unsubscribe();cloud.unsubscribe=null}
   updateAuthUI(user);
+
   try{
-    setAuthStatus("Đang kiểm tra dữ liệu tài khoản…");
+    setAuthStatus("Đang kiểm tra phiên bản dữ liệu…");
     const ref=cloudDataRef();
     const snap=await ref.get();
-    if(snap.exists&&snap.data()){applyCloudPayload(snap.data()||{});setAuthStatus("Đã tải dữ liệu tài khoản","online")}
-    else{await ref.set(localDataPayload(),{merge:true});setAuthStatus("Đã tạo dữ liệu đồng bộ","online")}
+
+    if(snap.exists&&snap.data()){
+      const remoteData=snap.data()||{};
+      const remoteRevision=syncGuardRevisionFromCloud(remoteData);
+      const localRevision=syncGuard.localRevision||0;
+
+      if(syncGuardIsNewer(remoteRevision,localRevision)){
+        /* Cloud mới hơn → tải cloud xuống local, tuyệt đối không ghi local cũ lên cloud. */
+        applyCloudPayload(remoteData);
+        syncGuard.localRevision=remoteRevision;
+        syncGuard.lastRemoteRevision=remoteRevision;
+        syncGuardWriteRevision();
+        setAuthStatus("Đã nhận dữ liệu mới nhất từ cloud","online");
+      }else if(localRevision>remoteRevision){
+        /* Local mới hơn → chưa mở khóa auto-save; ghi local qua transaction. */
+        syncGuard.localRevision=localRevision;
+        syncGuard.lastRemoteRevision=remoteRevision;
+        cloud.ready=true;
+        setAuthStatus("Thiết bị này có dữ liệu mới hơn — đang bảo vệ và tải lên…");
+        await syncToCloud(true);
+      }else{
+        syncGuard.lastRemoteRevision=remoteRevision;
+        syncGuard.localRevision=remoteRevision;
+        syncGuardWriteRevision();
+        applyCloudPayload(remoteData);
+        setAuthStatus("Dữ liệu đã khớp","online");
+      }
+    }else{
+      /* Cloud chưa có dữ liệu: cho phép tạo bản đầu tiên từ local. */
+      if(!syncGuard.localRevision)syncGuardTouchLocal();
+      syncGuard.autoSaveLocked=false;
+      cloud.ready=true;
+      await syncToCloud();
+      syncGuard.autoSaveLocked=false;
+      setAuthStatus("Đã tạo dữ liệu đồng bộ","online");
+    }
+
     cloud.ready=true;
     startCloudListener();
-    setAuthStatus("Đã đồng bộ thời gian thực","online");
+
+    /* Chỉ tại đây mới mở khóa auto-save/ghi đè. */
+    syncGuard.autoSaveLocked=false;
+    syncGuard.initialized=true;
+    syncGuardWriteRevision();
+    setAuthStatus("Đã đồng bộ phiên bản mới nhất","online");
   }catch(e){
-    console.error("Cloud user init",e);cloud.ready=false;setAuthStatus("Đồng bộ chưa sẵn sàng — vẫn giữ dữ liệu trên thiết bị","error");showMessage("Không thể tải dữ liệu cloud. Dữ liệu trên thiết bị vẫn được giữ nguyên.","warn")
+    console.error("Cloud user init",e);
+    cloud.ready=false;
+    syncGuard.autoSaveLocked=true;
+    setAuthStatus("Đồng bộ chưa sẵn sàng — vẫn giữ dữ liệu trên thiết bị","error");
+    showMessage("Không thể tải dữ liệu cloud. Auto-save cloud đã bị khóa để tránh ghi đè dữ liệu.","warn");
   }
 }
+
 async function initCloud(){
   updateAuthUI(null);
+  syncGuardReadRevision();
+  syncGuard.autoSaveLocked=true;
+
   const loginBtn=$("emailLoginBtn"),registerBtn=$("emailRegisterBtn"),logoutBtn=$("emailLogoutBtn");
   if(loginBtn)loginBtn.onclick=signInEmail;
   if(registerBtn)registerBtn.onclick=registerEmail;
   if(logoutBtn)logoutBtn.onclick=signOutEmail;
   [$("authEmail"),$("authPassword")].forEach(el=>el&&el.addEventListener("keydown",e=>{if(e.key==="Enter")signInEmail()}));
-  if(!firebaseConfigured()){setAuthStatus("Firebase chưa được cấu hình — dữ liệu chỉ lưu trên thiết bị","error");return}
+  if(!firebaseConfigured()){
+    syncGuard.autoSaveLocked=false;
+    setAuthStatus("Firebase chưa được cấu hình — dữ liệu chỉ lưu trên thiết bị","error");
+    return;
+  }
   try{
     if(!firebase.apps.length)firebase.initializeApp(window.FIREBASE_CONFIG);
     cloud.enabled=true;cloud.db=firebase.firestore();cloud.auth=firebase.auth();
     cloud.db.enablePersistence({synchronizeTabs:true}).catch(e=>console.warn("Firestore offline persistence:",e.code||e.message));
     await cloud.auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
     cloud.auth.onAuthStateChanged(async user=>{
-      if(!user){cloud.user=null;cloud.ready=false;if(cloud.unsubscribe){cloud.unsubscribe();cloud.unsubscribe=null}updateAuthUI(null);setAuthStatus("Chưa đăng nhập — dữ liệu chỉ lưu trên thiết bị");return}
+      if(!user){
+        cloud.user=null;cloud.ready=false;
+        syncGuard.autoSaveLocked=true;
+        if(cloud.unsubscribe){cloud.unsubscribe();cloud.unsubscribe=null}
+        updateAuthUI(null);
+        setAuthStatus("Chưa đăng nhập — dữ liệu chỉ lưu trên thiết bị");
+        return;
+      }
       await prepareCloudForUser(user);
     });
-  }catch(e){console.error("Firebase init",e);setAuthStatus("Firebase chưa sẵn sàng — dữ liệu chỉ lưu trên thiết bị","error")}
+  }catch(e){
+    console.error("Firebase init",e);
+    syncGuard.autoSaveLocked=false;
+    setAuthStatus("Firebase chưa sẵn sàng — dữ liệu chỉ lưu trên thiết bị","error");
+  }
 }
 
 function fileById(id){return db.files.find(f=>f.id===id)||null}
