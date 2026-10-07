@@ -300,7 +300,8 @@ input,select{max-width:100%}
     <div class="toolbar">
       <input id="detailSearch" class="search" placeholder="🔎 Tìm từ trong file...">
       <div class="row"><label><input id="detailSelectAll" class="checkbox" type="checkbox"> Chọn tất cả</label>
-      <button id="deleteWords" class="btn danger" disabled>🗑 Xóa các từ đã chọn</button></div>
+      <button id="deleteWords" class="btn danger" disabled>🗑 Xóa các từ đã chọn</button>
+      <button id="downloadTxt" class="btn success" type="button">⬇️ Tải .txt</button></div>
     </div>
     <div style="overflow:auto"><table class="table"><thead><tr><th></th><th>Từ</th><th>Từ loại</th><th>Nghĩa</th><th></th></tr></thead><tbody id="detailBody"></tbody></table></div>
   </div></section>
@@ -1074,6 +1075,43 @@ function deleteFile(id){
 function openDetail(id){
   activeFileId=id;selectedDetail.clear();activate("detail");renderDetail();
 }
+function downloadVocabularyTxt(){
+  const f=fileById(activeFileId);
+  if(!f){showMessage("Hãy chọn một file trước khi tải xuống.","warn");return}
+
+  const words=selectedDetail.size
+    ? [...selectedDetail].sort((a,b)=>a-b).map(i=>f.words[i]).filter(Boolean)
+    : f.words;
+
+  if(!words.length){showMessage("File hiện tại không có từ vựng để tải xuống.","warn");return}
+
+  const cleanField=value=>String(value??"")
+    .replace(/\r?\n/g," ")
+    .replace(/\|/g,"／")
+    .trim();
+
+  const content=words.map(w=>[
+    cleanField(w.word),
+    cleanField(w.type),
+    cleanField(w.meaning),
+    cleanField(w.example)
+  ].join(" | ")).join("\r\n");
+
+  const blob=new Blob(["\uFEFF",content],{type:"text/plain;charset=utf-8"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  const suffix=selectedDetail.size?"_selected":"";
+  const safeName=String(f.name).replace(/[\\/:*?"<>|]/g,"_").trim()||"vocabkab";
+  a.href=url;
+  a.download=`${safeName}${suffix}.txt`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  showMessage(`Đã tạo file .txt gồm ${words.length} từ${selectedDetail.size?" đã chọn":""}.`,"ok");
+}
+$("downloadTxt").onclick=downloadVocabularyTxt;
+
 function renderDetail(){
   const f=fileById(activeFileId);if(!f){$("detailTitle").textContent="Chưa chọn file";$("detailBody").innerHTML="";$("deleteWords").disabled=true;return}
   $("detailTitle").textContent="📘 "+f.name;$("detailMeta").textContent=`${f.words.length} từ`;
