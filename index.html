@@ -95,6 +95,7 @@ h2{margin-top:0}.muted{color:var(--muted)}
 .direction-card.active{border-color:var(--primary);background:var(--hover);color:var(--primary)}
 .recall-feedback{margin:15px auto;padding:14px;border-radius:10px;max-width:650px;text-align:center}
 .recall-feedback.ok{background:#dcfce7;color:#166534}.recall-feedback.bad{background:#fee2e2;color:#991b1b}
+.vocab-modal{position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:1000;display:none;align-items:center;justify-content:center;padding:16px}.vocab-modal.open{display:flex}.vocab-modal-card{width:min(680px,100%);max-height:90vh;overflow:auto;background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:16px;padding:22px;box-shadow:var(--shadow)}.vocab-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.vocab-form-grid label{display:grid;gap:5px;font-weight:600}.vocab-form-grid input,.vocab-form-grid textarea,.vocab-form-grid select{width:100%;min-width:0;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text)}.vocab-form-grid .wide{grid-column:1/-1}@media(max-width:600px){.vocab-form-grid{grid-template-columns:1fr}.vocab-form-grid .wide{grid-column:auto}}
 @media(max-width:750px){.recall-config{grid-template-columns:1fr}.recall-prompt{font-size:31px}}
 .direction-toggle{display:flex;gap:6px;align-items:center;padding:4px;border:1px solid var(--border);border-radius:11px;background:var(--card)}
 .direction-toggle .direction-btn{border:0;border-radius:8px;padding:8px 12px;background:transparent;color:var(--muted);font-weight:700;min-height:40px}
@@ -279,8 +280,8 @@ input,select{max-width:100%}
   </div></section>
 
   <section id="manage" class="view"><div class="panel">
-    <div class="toolbar"><div><h2 style="margin:0">🗂️ Quản lý & Xóa file</h2><span class="muted">Có thể xóa cả file hoặc mở file để xóa từng từ.</span></div>
-      <input id="manageSearch" class="search" placeholder="🔎 Tìm file cần quản lý..."></div>
+    <div class="toolbar"><div><h2 style="margin:0">🗂️ Quản lý file</h2><span class="muted">Tạo, đổi tên, chỉnh sửa nội dung hoặc xóa file.</span></div>
+      <div class="row"><button class="btn primary" id="createFileBtn" type="button">＋ Tạo file mới</button><input id="manageSearch" class="search" placeholder="🔎 Tìm file cần quản lý..."></div></div>
     <div id="manageGrid" class="file-grid"></div>
   </div></section>
 
@@ -300,11 +301,24 @@ input,select{max-width:100%}
     <div class="toolbar">
       <input id="detailSearch" class="search" placeholder="🔎 Tìm từ trong file...">
       <div class="row"><label><input id="detailSelectAll" class="checkbox" type="checkbox"> Chọn tất cả</label>
-      <button id="deleteWords" class="btn danger" disabled>🗑 Xóa các từ đã chọn</button>
+      <button id="addWordBtn" class="btn primary" type="button">＋ Thêm từ</button><button id="deleteWords" class="btn danger" disabled>🗑 Xóa các từ đã chọn</button>
       <button id="downloadTxt" class="btn success" type="button">⬇️ Tải .txt</button></div>
     </div>
-    <div style="overflow:auto"><table class="table"><thead><tr><th></th><th>Từ</th><th>Từ loại</th><th>Nghĩa</th><th></th></tr></thead><tbody id="detailBody"></tbody></table></div>
+    <div style="overflow:auto"><table class="table"><thead><tr><th></th><th>Từ</th><th>Từ loại</th><th>Nghĩa tiếng Việt</th><th>Ví dụ (kèm dịch)</th><th>Thao tác</th></tr></thead><tbody id="detailBody"></tbody></table></div>
   </div></section>
+
+<div id="fileEditorModal" class="vocab-modal" role="dialog" aria-modal="true" aria-labelledby="fileEditorTitle">
+ <div class="vocab-modal-card">
+  <div class="toolbar"><h2 id="fileEditorTitle">Tạo file mới</h2><button class="btn secondary" type="button" data-close-modal="fileEditorModal">Đóng ✕</button></div>
+  <form id="fileEditorForm"><div class="vocab-form-grid">
+   <label class="wide">Tên file<input id="editorFileName" maxlength="120" required placeholder="Ví dụ: Environment"></label>
+   <label>Từ vựng<input id="editorVocab" required placeholder="Vocabulary"></label>
+   <label>Từ loại<select id="editorType" required><option value="">Chọn từ loại</option><option value="noun">noun</option><option value="verb">verb</option><option value="adjective">adjective</option><option value="adverb">adverb</option><option value="pronoun">pronoun</option><option value="preposition">preposition</option><option value="conjunction">conjunction</option><option value="interjection">interjection</option><option value="phrase">phrase</option><option value="other">other</option></select></label>
+   <label class="wide">Nghĩa tiếng Việt<input id="editorMeaning" required placeholder="Nghĩa tiếng Việt"></label>
+   <label class="wide">Ví dụ tiếng Anh và bản dịch<textarea id="editorExample" rows="3" placeholder="English sentence (Bản dịch tiếng Việt)"></textarea></label>
+  </div><p class="muted" id="editorHint">Nhập thông tin file và từ vựng.</p><div class="row"><button class="btn primary" type="submit">Lưu</button><button class="btn secondary" type="button" data-close-modal="fileEditorModal">Hủy</button></div></form>
+ </div>
+</div>
 </main>
 
 <script>
@@ -796,7 +810,7 @@ function fileCard(f,manage=false){
     <div class="row">
       <button class="btn primary" data-open="${f.id}">▶ Luyện tập</button>
       ${manage?`<button class="btn secondary" data-detail="${f.id}">🔍 Chi tiết</button>
-      <button class="btn danger" data-delete-file="${f.id}">🗑 Xóa file</button>`:""}
+      <button class="btn secondary" data-rename-file="${f.id}">✏️ Đổi tên</button><button class="btn danger" data-delete-file="${f.id}">🗑 Xóa file</button>`:""}
     </div>
   </div>`;
 }
@@ -813,6 +827,7 @@ function renderManageGrid(){
   $("manageGrid").querySelectorAll("[data-open]").forEach(b=>b.onclick=()=>openFile(b.dataset.open));
   $("manageGrid").querySelectorAll("[data-detail]").forEach(b=>openDetailOnClick(b));
   $("manageGrid").querySelectorAll("[data-delete-file]").forEach(b=>b.onclick=()=>deleteFile(b.dataset.deleteFile));
+  $("manageGrid").querySelectorAll("[data-rename-file]").forEach(b=>b.onclick=()=>renameFile(b.dataset.renameFile));
 }
 function openDetailOnClick(b){b.onclick=()=>openDetail(b.dataset.detail)}
 
@@ -1115,10 +1130,11 @@ $("downloadTxt").onclick=downloadVocabularyTxt;
 function renderDetail(){
   const f=fileById(activeFileId);if(!f){$("detailTitle").textContent="Chưa chọn file";$("detailBody").innerHTML="";$("deleteWords").disabled=true;return}
   $("detailTitle").textContent="📘 "+f.name;$("detailMeta").textContent=`${f.words.length} từ`;
-  const q=norm($("detailSearch").value);const rows=f.words.map((w,i)=>({w,i})).filter(x=>!q||norm(x.w.word).includes(q)||norm(x.w.type).includes(q)||norm(x.w.meaning).includes(q));
-  $("detailBody").innerHTML=rows.length?rows.map(x=>`<tr><td><input class="checkbox detail-check" data-i="${x.i}" type="checkbox" ${selectedDetail.has(x.i)?"checked":""}></td><td><b>${escapeHtml(x.w.word)}</b></td><td><span class="badge">${escapeHtml(x.w.type)}</span></td><td>${escapeHtml(x.w.meaning)}</td><td><button class="btn danger" data-one="${x.i}">Xóa</button></td></tr>`).join(""):`<tr><td colspan="5" class="empty">Không có từ phù hợp.</td></tr>`;
-  document.querySelectorAll(".detail-check").forEach(c=>c.onchange=()=>{const i=+c.dataset.i;c.checked?selectedDetail.add(i):selectedDetail.delete(i);updateDetailControls()});
+  const q=norm($("detailSearch").value);const rows=f.words.map((w,i)=>({w,i})).filter(x=>!q||norm(x.w.word||x.w.vocab).includes(q)||norm(x.w.type).includes(q)||norm(x.w.meaning).includes(q)||norm(x.w.example||"").includes(q));
+  $("detailBody").innerHTML=rows.length?rows.map(x=>`<tr><td><input class="checkbox detail-check" data-i="${x.i}" type="checkbox" ${selectedDetail.has(x.i)?"checked":""}></td><td><b>${escapeHtml(x.w.word||x.w.vocab||"")}</b></td><td><span class="badge">${escapeHtml(x.w.type||"")}</span></td><td>${escapeHtml(x.w.meaning||"")}</td><td>${escapeHtml(x.w.example||"")}</td><td><div class="row"><button class="btn secondary" data-edit-word="${x.i}" type="button">✏️ Sửa</button><button class="btn danger" data-one="${x.i}" type="button">Xóa</button></div></td></tr>`).join(""):`<tr><td colspan="6" class="empty">Không có từ phù hợp.</td></tr>`;
+  $("detailBody").querySelectorAll(".detail-check").forEach(c=>c.onchange=()=>{const i=+c.dataset.i;c.checked?selectedDetail.add(i):selectedDetail.delete(i);updateDetailControls()});
   $("detailBody").querySelectorAll("[data-one]").forEach(b=>b.onclick=()=>deleteOneWord(+b.dataset.one));
+  $("detailBody").querySelectorAll("[data-edit-word]").forEach(b=>b.onclick=()=>editWord(+b.dataset.editWord));
   updateDetailControls();
 }
 $("detailSearch").oninput=renderDetail;
@@ -1138,6 +1154,52 @@ $("deleteWords").onclick=()=>{
 };
 $("backManage").onclick=()=>activate("manage");
 
+// File-management additions, kept separate from the existing learning modules.
+let editingWordIndex=null;
+function openEditor(){ $("fileEditorModal").classList.add("open"); }
+function closeEditor(){ $("fileEditorModal").classList.remove("open"); $("fileEditorForm").reset(); $("editorFileName").disabled=false; editingWordIndex=null; }
+document.querySelectorAll("[data-close-modal]").forEach(b=>b.addEventListener("click",closeEditor));
+$("fileEditorModal").addEventListener("click",e=>{if(e.target===$("fileEditorModal"))closeEditor()});
+function renameFile(id){
+ const f=fileById(id);if(!f)return;
+ const proposed=prompt("Nhập tên mới cho file:",f.name);if(proposed===null)return;
+ const name=proposed.trim();if(!name){showMessage("Tên file không được để trống.","err");return}
+ if(db.files.some(x=>x.id!==id&&norm(x.name)===norm(name))){showMessage("Tên file đã tồn tại. Hãy chọn tên khác.","err");return}
+ f.name=name;save();renderAll();if(activeFileId===id)renderDetail();showMessage("Đổi tên file thành công.","ok");
+}
+$("createFileBtn").onclick=()=>{
+ editingWordIndex=null;$("fileEditorForm").reset();$("editorFileName").disabled=false;
+ $("fileEditorTitle").textContent="Tạo file mới";$("editorHint").textContent="Nhập tên file và từ vựng đầu tiên.";openEditor();
+};
+$("addWordBtn").onclick=()=>{
+ const f=fileById(activeFileId);if(!f)return;
+ editingWordIndex=null;$("fileEditorForm").reset();$("editorFileName").value=f.name;$("editorFileName").disabled=true;
+ $("fileEditorTitle").textContent="Thêm từ vựng";$("editorHint").textContent="Từ mới sẽ được thêm vào file đang mở.";openEditor();
+};
+function editWord(i){
+ const f=fileById(activeFileId),w=f?.words[i];if(!w)return;
+ editingWordIndex=i;$("fileEditorForm").reset();$("editorFileName").value=f.name;$("editorFileName").disabled=true;
+ $("editorVocab").value=w.word||w.vocab||"";$("editorType").value=w.type||"";$("editorMeaning").value=w.meaning||"";$("editorExample").value=w.example||"";
+ $("fileEditorTitle").textContent="Chỉnh sửa từ vựng";$("editorHint").textContent="Chỉnh sửa các trường rồi nhấn Lưu.";openEditor();
+}
+$("fileEditorForm").addEventListener("submit",e=>{
+ e.preventDefault();
+ const name=$("editorFileName").value.trim(),vocab=$("editorVocab").value.trim(),type=$("editorType").value.trim(),meaning=$("editorMeaning").value.trim(),example=$("editorExample").value.trim();
+ if(!name){showMessage("Tên file không được để trống.","err");return}
+ if(!vocab||!type||!meaning){showMessage("Vui lòng nhập từ vựng, từ loại và nghĩa tiếng Việt.","err");return}
+ let f=fileById(activeFileId);
+ if(!$("editorFileName").disabled){
+  if(db.files.some(x=>norm(x.name)===norm(name))){showMessage("Tên file đã tồn tại. Hãy chọn tên khác.","err");return}
+  f={id:uid(),name,source:"Created in VocabKab",createdAt:new Date().toISOString(),words:[]};db.files.push(f);activeFileId=f.id;
+ }
+ const word={id:uid(),word:vocab,vocab,type,meaning,example};
+ const wasEditing=editingWordIndex!==null;
+ if(wasEditing&&f){const old=f.words[editingWordIndex];word.id=old.id||uid();f.words[editingWordIndex]=word;}
+ else if(f)f.words.push(word);
+ save();renderAll();if(f){activeFileId=f.id;activate("detail");renderDetail();}
+ closeEditor();showMessage(wasEditing?"Đã cập nhật từ vựng thành công.":"Đã lưu từ vựng thành công.","ok");
+});
+
 function mergeFiles(){
   const checks=[...document.querySelectorAll(".merge-check:checked")].map(x=>x.value);
   if(checks.length<2){showMessage("Hãy chọn ít nhất 2 file để gộp.","warn");return}
@@ -1151,8 +1213,9 @@ function mergeFiles(){
 }
 function renderManageGridWithMerge(){
   const q=$("manageSearch").value,list=db.files.filter(f=>fileMatches(f,q));
-  $("manageGrid").innerHTML=list.length?list.map(f=>`<div class="file-card"><div class="row"><input class="checkbox merge-check" type="checkbox" value="${f.id}"><b>Chọn gộp</b></div><h3>📘 ${escapeHtml(f.name)}</h3><div class="file-meta">${f.words.length} từ</div><div class="row"><button class="btn primary" data-open="${f.id}">▶ Luyện tập</button><button class="btn secondary" data-detail="${f.id}">🔍 Chi tiết</button><button class="btn danger" data-delete-file="${f.id}">🗑 Xóa file</button></div></div>`).join(""):`<div class="empty">Không tìm thấy file.</div>`;
+  $("manageGrid").innerHTML=list.length?list.map(f=>`<div class="file-card"><div class="row"><input class="checkbox merge-check" type="checkbox" value="${f.id}"><b>Chọn gộp</b></div><h3>📘 ${escapeHtml(f.name)}</h3><div class="file-meta">${f.words.length} từ</div><div class="row"><button class="btn primary" data-open="${f.id}">▶ Luyện tập</button><button class="btn secondary" data-detail="${f.id}">🔍 Chi tiết</button><button class="btn secondary" data-rename-file="${f.id}">✏️ Đổi tên</button><button class="btn danger" data-delete-file="${f.id}">🗑 Xóa file</button></div></div>`).join(""):`<div class="empty">Không tìm thấy file.</div>`;
   $("manageGrid").querySelectorAll("[data-open]").forEach(b=>b.onclick=()=>openFile(b.dataset.open));$("manageGrid").querySelectorAll("[data-detail]").forEach(b=>b.onclick=()=>openDetail(b.dataset.detail));$("manageGrid").querySelectorAll("[data-delete-file]").forEach(b=>b.onclick=()=>deleteFile(b.dataset.deleteFile));
+  $("manageGrid").querySelectorAll("[data-rename-file]").forEach(b=>b.onclick=()=>renameFile(b.dataset.renameFile));
   $("manageGrid").insertAdjacentHTML("afterbegin",`<div style="grid-column:1/-1"><button class="btn primary" id="mergeSelected">🔗 Gộp các file đã chọn</button></div>`);
   $("mergeSelected").onclick=mergeFiles;
 }
