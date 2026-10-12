@@ -1261,5 +1261,107 @@ renderAll();
     });
   }
 </script>
+
+<!-- VocabKab: tính năng bổ sung độc lập -->
+<style>
+#vkTransferBar{display:none;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 0}
+#vkTransferBar.show{display:flex}
+#vkTransferBar select,#vkFlashJumpInput{padding:10px;border:1px solid var(--border);border-radius:9px;background:var(--card);color:var(--text);min-width:130px}
+#vkFlashJump{display:flex;justify-content:center;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px}
+#vkFlashJumpInput{width:110px;min-width:0}
+</style>
+<script>
+(function(){
+  "use strict";
+  const byId=id=>document.getElementById(id);
+  const fileByIdSafe=id=>(typeof fileById==="function"?fileById(id):null);
+
+  // Add a dedicated transfer bar without changing existing file-management logic.
+  const detailToolbar=byId("detailSelectAll")?.closest(".toolbar");
+  if(detailToolbar){
+    const bar=document.createElement("div");
+    bar.id="vkTransferBar";
+    bar.innerHTML='<strong id="vkSelectedCount">0 từ đã chọn</strong><label for="vkTargetFile">File đích:</label><select id="vkTargetFile" aria-label="Chọn file đích"></select><label><input type="radio" name="vkTransferMode" value="copy" checked> Sao chép</label><label><input type="radio" name="vkTransferMode" value="move"> Chuyển (xóa khỏi file hiện tại)</label><button type="button" class="btn primary" id="vkTransferApply">Thực hiện</button>';
+    detailToolbar.insertAdjacentElement("afterend",bar);
+  }
+
+  function refreshTransferBar(){
+    const bar=byId("vkTransferBar"),target=byId("vkTargetFile");
+    if(!bar||!target||typeof db==="undefined")return;
+    const source=fileByIdSafe(activeFileId);
+    const count=typeof selectedDetail!=="undefined"?selectedDetail.size:0;
+    bar.classList.toggle("show",count>0);
+    byId("vkSelectedCount").textContent=count+" từ đã chọn";
+    const previous=target.value;
+    target.innerHTML=(db.files||[]).filter(f=>f.id!==activeFileId)
+      .map(f=>'<option value="'+String(f.id).replace(/&/g,"&amp;").replace(/"/g,"&quot;")+'">'+
+        String(f.name).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")+
+        ' ('+f.words.length+' từ)</option>').join("");
+    if([...target.options].some(o=>o.value===previous))target.value=previous;
+    byId("vkTransferApply").disabled=!source||!count||!target.value;
+  }
+
+  function transferSelectedWords(){
+    const source=fileByIdSafe(activeFileId),target=fileByIdSafe(byId("vkTargetFile")?.value);
+    if(!source||!target||!selectedDetail?.size){showMessage("Hãy chọn từ vựng và file đích hợp lệ.","warn");return}
+    const indices=[...selectedDetail].filter(i=>Number.isInteger(i)&&source.words[i]).sort((a,b)=>a-b);
+    if(!indices.length){showMessage("Không có từ vựng hợp lệ để chuyển.","warn");return}
+    const mode=document.querySelector('input[name="vkTransferMode"]:checked')?.value||"copy";
+    const entries=indices.map(i=>({index:i,word:{...source.words[i],id:uid()}}));
+    const seen=new Set(target.words.map(w=>norm(w.word||w.vocab)+"|"+norm(w.type)+"|"+norm(w.meaning)));
+    const uniqueEntries=entries.filter(entry=>{const w=entry.word,key=norm(w.word||w.vocab)+"|"+norm(w.type)+"|"+norm(w.meaning);if(seen.has(key))return false;seen.add(key);return true});
+    const unique=uniqueEntries.map(entry=>entry.word);
+    if(!unique.length){showMessage("Các từ đã chọn đều tồn tại trong file đích; không có từ mới được thêm.","warn");return}
+    if(mode==="move"&&!confirm("Chuyển "+unique.length+" từ sang \""+target.name+"\" và xóa các từ đó khỏi file hiện tại?"))return;
+    target.words.push(...unique);
+    if(mode==="move"){
+      const moved=new Set(uniqueEntries.map(entry=>entry.index));
+      source.words=source.words.filter((w,i)=>!moved.has(i));
+    }
+    selectedDetail.clear();
+    save();renderAll();renderDetail();refreshTransferBar();
+    showMessage("Đã "+(mode==="move"?"chuyển":"sao chép")+" "+unique.length+" từ sang \""+target.name+"\"."+(words.length>unique.length?" Bỏ qua "+(words.length-unique.length)+" từ trùng lặp.":""),"ok");
+  }
+  byId("vkTransferApply")?.addEventListener("click",transferSelectedWords);
+
+  // Observe changes from the existing detail renderer and checkbox handlers.
+  const detailBody=byId("detailBody");
+  if(detailBody){
+    new MutationObserver(refreshTransferBar).observe(detailBody,{childList:true,subtree:true});
+    detailBody.addEventListener("change",e=>{if(e.target.matches(".detail-check"))setTimeout(refreshTransferBar,0)});
+  }
+  byId("detailSelectAll")?.addEventListener("change",()=>setTimeout(refreshTransferBar,0));
+  byId("detailSearch")?.addEventListener("input",refreshTransferBar);
+  document.querySelectorAll("[data-view='manage']").forEach(b=>b.addEventListener("click",()=>setTimeout(refreshTransferBar,0)));
+  byId("backManage")?.addEventListener("click",()=>setTimeout(refreshTransferBar,0));
+
+  // Flashcard position jump and reset-to-first controls.
+  const flashControls=byId("flashCounter");
+  if(flashControls){
+    const jump=document.createElement("div");
+    jump.id="vkFlashJump";
+    jump.innerHTML='<label for="vkFlashJumpInput">Đến thẻ số:</label><input id="vkFlashJumpInput" type="number" min="1" step="1" inputmode="numeric" placeholder="Ví dụ: 25"><button type="button" class="btn primary" id="vkFlashJumpGo">Đi đến</button><button type="button" class="btn secondary" id="vkFlashFirst">↩ Về thẻ đầu tiên</button>';
+    flashControls.insertAdjacentElement("afterend",jump);
+    function jumpToPosition(){
+      const f=fileByIdSafe(activeFileId),input=byId("vkFlashJumpInput");
+      if(!f||!f.words.length){showMessage("Hãy chọn file có từ vựng trước.","warn");return}
+      const n=Number(input.value);
+      if(!Number.isInteger(n)||n<1||n>f.words.length){
+        showMessage("Nhập số thẻ từ 1 đến "+f.words.length+".","warn");input.focus();return;
+      }
+      flashIndex=n-1;renderFlash();input.value="";
+    }
+    byId("vkFlashJumpGo").addEventListener("click",jumpToPosition);
+    byId("vkFlashJumpInput").addEventListener("keydown",e=>{if(e.key==="Enter")jumpToPosition()});
+    byId("vkFlashFirst").addEventListener("click",()=>{
+      const f=fileByIdSafe(activeFileId);
+      if(!f||!f.words.length){showMessage("Hãy chọn file có từ vựng trước.","warn");return}
+      flashIndex=0;renderFlash();
+    });
+  }
+  refreshTransferBar();
+})();
+</script>
+
 </body>
 </html>
