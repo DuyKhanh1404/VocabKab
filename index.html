@@ -149,6 +149,16 @@ input,select{max-width:100%}
 .sync-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#fbbf24;margin-right:5px}
 .sync-dot.online{background:#4ade80}.sync-dot.error{background:#f87171}
 @media(max-width:750px){.auth-bar{justify-content:flex-start}.auth-panel{width:100%}.auth-input{flex:1;min-width:130px}.auth-btn{flex:1}.auth-status{width:100%}}
+
+/* VocabKab additions: numbering, range selection and folders */
+#detailBody tr.vk-range-selected{background:var(--hover)}
+.vk-stt{width:54px;color:var(--muted);font-variant-numeric:tabular-nums}
+.vk-folder-card{border:1px solid #eab308;background:#fef3c7;color:#713f12;border-radius:13px;padding:16px;min-width:0}
+[data-theme="dark"] .vk-folder-card{background:#422006;color:#fef08a;border-color:#a16207}
+.vk-folder-card h3{margin:0 0 8px;overflow-wrap:anywhere}
+.vk-folder-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+.vk-folder-tools input,.vk-folder-tools select{padding:10px;border:1px solid var(--border);border-radius:9px;background:var(--card);color:var(--text)}
+.vk-folder-back{margin-bottom:12px}
 </style>
 </head>
 <body>
@@ -304,7 +314,7 @@ input,select{max-width:100%}
       <button id="addWordBtn" class="btn primary" type="button">＋ Thêm từ</button><button id="deleteWords" class="btn danger" disabled>🗑 Xóa các từ đã chọn</button>
       <button id="downloadTxt" class="btn success" type="button">⬇️ Tải .txt</button></div>
     </div>
-    <div style="overflow:auto"><table class="table"><thead><tr><th></th><th>Từ</th><th>Từ loại</th><th>Nghĩa tiếng Việt</th><th>Ví dụ (kèm dịch)</th><th>Thao tác</th></tr></thead><tbody id="detailBody"></tbody></table></div>
+    <div style="overflow:auto"><table class="table"><thead><tr><th></th><th class="vk-stt">STT</th><th>Từ</th><th>Từ loại</th><th>Nghĩa tiếng Việt</th><th>Ví dụ (kèm dịch)</th><th>Thao tác</th></tr></thead><tbody id="detailBody"></tbody></table></div>
   </div></section>
 
 <div id="fileEditorModal" class="vocab-modal" role="dialog" aria-modal="true" aria-labelledby="fileEditorTitle">
@@ -489,6 +499,7 @@ function cloudDataRef(){return cloud.db.collection("users").doc(cloud.user.uid).
 function localDataPayload(){
   return {
     files:Array.isArray(db.files)?db.files:[],
+    folders:Array.isArray(db.folders)?db.folders:[],
     progress:(progressStore&&typeof progressStore==="object")?progressStore:{},
     theme:localStorage.getItem(THEME_KEY)||"purple",
     schemaVersion:4,
@@ -501,6 +512,7 @@ function localDataPayload(){
 function applyCloudPayload(data){
   if(!data||typeof data!=="object")return false;
   if(Array.isArray(data.files))db.files=data.files.filter(f=>f&&f.id&&f.name&&Array.isArray(f.words));
+  if(Array.isArray(data.folders))db.folders=data.folders;
   if(data.progress&&typeof data.progress==="object")progressStore=data.progress;
   if(data.theme){localStorage.setItem(THEME_KEY,data.theme);applyTheme(data.theme,false)}
   localStorage.setItem(DB_KEY,JSON.stringify(db));
@@ -1131,7 +1143,7 @@ function renderDetail(){
   const f=fileById(activeFileId);if(!f){$("detailTitle").textContent="Chưa chọn file";$("detailBody").innerHTML="";$("deleteWords").disabled=true;return}
   $("detailTitle").textContent="📘 "+f.name;$("detailMeta").textContent=`${f.words.length} từ`;
   const q=norm($("detailSearch").value);const rows=f.words.map((w,i)=>({w,i})).filter(x=>!q||norm(x.w.word||x.w.vocab).includes(q)||norm(x.w.type).includes(q)||norm(x.w.meaning).includes(q)||norm(x.w.example||"").includes(q));
-  $("detailBody").innerHTML=rows.length?rows.map(x=>`<tr><td><input class="checkbox detail-check" data-i="${x.i}" type="checkbox" ${selectedDetail.has(x.i)?"checked":""}></td><td><b>${escapeHtml(x.w.word||x.w.vocab||"")}</b></td><td><span class="badge">${escapeHtml(x.w.type||"")}</span></td><td>${escapeHtml(x.w.meaning||"")}</td><td>${escapeHtml(x.w.example||"")}</td><td><div class="row"><button class="btn secondary" data-edit-word="${x.i}" type="button">✏️ Sửa</button><button class="btn danger" data-one="${x.i}" type="button">Xóa</button></div></td></tr>`).join(""):`<tr><td colspan="6" class="empty">Không có từ phù hợp.</td></tr>`;
+  $("detailBody").innerHTML=rows.length?rows.map(x=>`<tr data-vk-row="${x.i}" class="${selectedDetail.has(x.i)?"vk-range-selected":""}"><td><input class="checkbox detail-check" data-i="${x.i}" type="checkbox" ${selectedDetail.has(x.i)?"checked":""}></td><td class="vk-stt">${x.i+1}</td><td><b>${escapeHtml(x.w.word||x.w.vocab||"")}</b></td><td><span class="badge">${escapeHtml(x.w.type||"")}</span></td><td>${escapeHtml(x.w.meaning||"")}</td><td>${escapeHtml(x.w.example||"")}</td><td><div class="row"><button class="btn secondary" data-edit-word="${x.i}" type="button">✏️ Sửa</button><button class="btn danger" data-one="${x.i}" type="button">Xóa</button></div></td></tr>`).join(""):`<tr><td colspan="7" class="empty">Không có từ phù hợp.</td></tr>`;
   $("detailBody").querySelectorAll(".detail-check").forEach(c=>c.onchange=()=>{const i=+c.dataset.i;c.checked?selectedDetail.add(i):selectedDetail.delete(i);updateDetailControls()});
   $("detailBody").querySelectorAll("[data-one]").forEach(b=>b.onclick=()=>deleteOneWord(+b.dataset.one));
   $("detailBody").querySelectorAll("[data-edit-word]").forEach(b=>b.onclick=()=>editWord(+b.dataset.editWord));
@@ -1360,6 +1372,89 @@ renderAll();
     });
   }
   refreshTransferBar();
+})();
+</script>
+
+
+<script>
+/* Additive enhancements: vocabulary range selection and file folders. */
+(function(){
+  const $=id=>document.getElementById(id);
+  let lastRangeIndex=null;
+  // Shift+click (or click a checkbox after selecting an anchor) selects a contiguous range.
+  const body=$('detailBody');
+  if(body){
+    body.addEventListener('click',e=>{
+      const check=e.target.closest('.detail-check'); if(!check)return;
+      const idx=Number(check.dataset.i);
+      if(e.shiftKey && lastRangeIndex!==null){
+        const lo=Math.min(idx,lastRangeIndex),hi=Math.max(idx,lastRangeIndex);
+        body.querySelectorAll('.detail-check').forEach(c=>{
+          const n=Number(c.dataset.i);
+          if(n>=lo&&n<=hi){c.checked=true;selectedDetail.add(n);c.closest('tr')?.classList.add('vk-range-selected')}
+        });
+        updateDetailControls();
+      }else{lastRangeIndex=idx;}
+    });
+    body.addEventListener('change',e=>{
+      if(!e.target.matches('.detail-check'))return;
+      const tr=e.target.closest('tr');tr?.classList.toggle('vk-range-selected',e.target.checked);
+      if(!e.target.checked)lastRangeIndex=Number(e.target.dataset.i);
+    });
+  }
+  // Keep range anchor sensible when changing files.
+  document.querySelectorAll('[data-detail]').forEach(b=>b.addEventListener('click',()=>{lastRangeIndex=null}));
+
+  // Folder metadata is additive and travels with db.files, so it also follows existing cloud sync.
+  if(!Array.isArray(db.folders))db.folders=[];
+  let openedFolderId=null;
+  const originalRenderFileGrid=renderFileGrid;
+  const originalRenderManageGrid=renderManageGrid;
+  function folderName(id){return db.folders.find(x=>x.id===id)?.name||''}
+  function folderCard(folder,manage){
+    const children=db.files.filter(f=>f.folderId===folder.id);
+    return `<div class="vk-folder-card" data-vk-folder="${folder.id}"><h3>📁 ${escapeHtml(folder.name)}</h3><div class="file-meta" style="color:inherit">${children.length} file</div><div class="row"><button class="btn primary" type="button" data-vk-open-folder="${folder.id}">📂 Mở thư mục</button>${manage?`<button class="btn secondary" type="button" data-vk-rename-folder="${folder.id}">✏️ Đổi tên</button><button class="btn danger" type="button" data-vk-delete-folder="${folder.id}">🗑 Xóa thư mục</button>`:''}</div></div>`
+  }
+  function folderToolbar(containerId,manage){
+    const el=$(containerId);if(!el)return;
+    let tools=$(manage?'vkManageFolderTools':'vkLibraryFolderTools');
+    if(!tools){tools=document.createElement('div');tools.id=manage?'vkManageFolderTools':'vkLibraryFolderTools';tools.className='vk-folder-tools';el.parentElement.insertBefore(tools,el);}
+    const folder=openedFolderId?db.folders.find(x=>x.id===openedFolderId):null;
+    tools.innerHTML=`${folder?`<button class="btn secondary vk-folder-back" type="button" data-vk-back-folders>← Tất cả thư mục/file</button><strong>📂 ${escapeHtml(folder.name)}</strong>`:''}${manage?'<button class="btn primary" type="button" id="vkCreateFolder">＋ Tạo thư mục</button>':''}<span class="muted">${folder?'Đang xem file trong thư mục':'File đã đưa vào thư mục sẽ ẩn khỏi danh sách bên ngoài.'}</span>`;
+    tools.querySelectorAll('[data-vk-back-folders]').forEach(b=>b.onclick=()=>{openedFolderId=null;renderAll()});
+    const create=$('vkCreateFolder');if(create)create.onclick=()=>{const name=prompt('Tên thư mục mới:');if(name===null)return;const clean=name.trim();if(!clean){showMessage('Tên thư mục không được để trống.','warn');return}if(db.folders.some(x=>norm(x.name)===norm(clean))){showMessage('Tên thư mục đã tồn tại.','warn');return}db.folders.push({id:uid(),name:clean,createdAt:new Date().toISOString()});save();renderAll();showMessage('Đã tạo thư mục '+clean+'.','ok')};
+  }
+  function bindFolderCards(containerId){
+    const el=$(containerId);if(!el)return;
+    el.querySelectorAll('[data-vk-open-folder]').forEach(b=>b.onclick=()=>{openedFolderId=b.dataset.vkOpenFolder;renderAll()});
+    el.querySelectorAll('[data-vk-rename-folder]').forEach(b=>b.onclick=()=>{const f=db.folders.find(x=>x.id===b.dataset.vkRenameFolder);if(!f)return;const name=prompt('Tên thư mục mới:',f.name);if(name===null)return;if(!name.trim())return showMessage('Tên thư mục không được để trống.','warn');if(db.folders.some(x=>x.id!==f.id&&norm(x.name)===norm(name.trim())))return showMessage('Tên thư mục đã tồn tại.','warn');f.name=name.trim();save();renderAll()});
+    el.querySelectorAll('[data-vk-delete-folder]').forEach(b=>b.onclick=()=>{const f=db.folders.find(x=>x.id===b.dataset.vkDeleteFolder);if(!f)return;if(!confirm(`Xóa thư mục "${f.name}"? Các file bên trong sẽ được đưa ra ngoài, không bị xóa.`))return;db.files.forEach(x=>{if(x.folderId===f.id)delete x.folderId});db.folders=db.folders.filter(x=>x.id!==f.id);if(openedFolderId===f.id)openedFolderId=null;save();renderAll()});
+  }
+  function decorateFiles(containerId,manage){
+    const el=$(containerId);if(!el)return;
+    folderToolbar(containerId,manage);
+    const q=$(manage?'manageSearch':'librarySearch')?.value||'';
+    const visibleFiles=db.files.filter(f=>(openedFolderId?f.folderId===openedFolderId:!f.folderId)&&fileMatches(f,q));
+    const visibleFolders=openedFolderId?[]:db.folders.filter(f=>norm(f.name).includes(norm(q)));
+    const cards=visibleFolders.map(f=>folderCard(f,manage)).join('')+visibleFiles.map(f=>manage?`<div class="file-card"><div class="row"><input class="checkbox merge-check" type="checkbox" value="${f.id}"><b>Chọn gộp</b></div><h3>📘 ${escapeHtml(f.name)}</h3><div class="file-meta">${f.words.length} từ · ${escapeHtml(f.source||'file')}${f.folderId?' · 📁 '+escapeHtml(folderName(f.folderId)):''}</div><div class="row"><button class="btn primary" data-open="${f.id}">▶ Luyện tập</button><button class="btn secondary" data-detail="${f.id}">🔍 Chi tiết</button><button class="btn secondary" data-rename-file="${f.id}">✏️ Đổi tên</button><button class="btn danger" data-delete-file="${f.id}">🗑 Xóa file</button><select aria-label="Chuyển thư mục" data-vk-place-file="${f.id}" style="max-width:180px;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text)"><option value="">Ngoài thư mục</option>${db.folders.map(d=>`<option value="${d.id}" ${f.folderId===d.id?'selected':''}>📁 ${escapeHtml(d.name)}</option>`).join('')}</select></div></div>`:fileCard(f)).join('');
+    el.innerHTML=(manage&&!openedFolderId?`<div style="grid-column:1/-1"><button class="btn primary" id="mergeSelected" type="button">🔗 Gộp các file đã chọn</button></div>`:'')+(cards||`<div class="empty">${openedFolderId?'Thư mục này chưa có file phù hợp.':'Chưa có file hoặc thư mục phù hợp.'}</div>`);
+    bindFolderCards(containerId);
+    if(manage&&$('mergeSelected'))$('mergeSelected').onclick=()=>mergeFiles();
+    el.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>openFile(b.dataset.open));
+    el.querySelectorAll('[data-detail]').forEach(b=>b.onclick=()=>openDetail(b.dataset.detail));
+    el.querySelectorAll('[data-delete-file]').forEach(b=>b.onclick=()=>deleteFile(b.dataset.deleteFile));
+    el.querySelectorAll('[data-rename-file]').forEach(b=>b.onclick=()=>renameFile(b.dataset.renameFile));
+    el.querySelectorAll('[data-vk-place-file]').forEach(sel=>sel.onchange=()=>{const f=fileById(sel.dataset.vkPlaceFile);if(!f)return;if(sel.value)f.folderId=sel.value;else delete f.folderId;save();renderAll();showMessage('Đã cập nhật vị trí file.','ok')});
+    if(manage){el.querySelectorAll('.merge-check').forEach(c=>{});}
+  }
+  // Replace only the presentation functions; existing learning and data operations remain untouched.
+  renderFileGrid=function(){decorateFiles('fileGrid',false)};
+  renderManageGrid=function(){decorateFiles('manageGrid',true)};
+  // Folder view state and new folder metadata are preserved when the normal render cycle runs.
+  const originalDeleteFile=deleteFile;
+  deleteFile=function(id){originalDeleteFile(id);if(openedFolderId&&!db.folders.some(f=>f.id===openedFolderId))openedFolderId=null};
+  // Re-render folder-aware views after installation.
+  if(typeof db!=='undefined'&&Array.isArray(db.files))renderAll();
 })();
 </script>
 
