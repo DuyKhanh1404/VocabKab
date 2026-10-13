@@ -159,6 +159,35 @@ input,select{max-width:100%}
 .vk-folder-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
 .vk-folder-tools input,.vk-folder-tools select{padding:10px;border:1px solid var(--border);border-radius:9px;background:var(--card);color:var(--text)}
 .vk-folder-back{margin-bottom:12px}
+
+/* Reading view: isolated additions */
+.reading-modal{position:fixed;inset:0;z-index:1100;background:rgba(15,23,42,.62);display:none;align-items:center;justify-content:center;padding:14px}
+.reading-modal.open{display:flex}
+.reading-card{width:min(980px,100%);max-height:92vh;overflow:auto;background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:16px;padding:20px;box-shadow:var(--shadow)}
+.reading-input{width:100%;min-height:190px;resize:vertical;padding:12px;border:1px solid var(--border);border-radius:10px;background:var(--bg);color:var(--text);font:inherit;line-height:1.65}
+.reading-result{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.8;border:1px solid var(--border);border-radius:10px;padding:14px;min-height:70px;background:var(--bg)}
+.reading-result mark{background:#fde68a;color:#78350f;font-weight:800;border-radius:3px;padding:0 2px}
+[data-theme="dark"] .reading-result mark{background:#854d0e;color:#fef3c7}
+.reading-stats{font-size:13px;color:var(--muted);margin:8px 0 12px}
+
+
+/* Saved reading / Reader View */
+.reading-result mark.reading-en{background:#fde68a;color:#78350f}
+.reading-result mark.reading-vi{background:#bbf7d0;color:#14532d}
+[data-theme="dark"] .reading-result mark.reading-en{background:#854d0e;color:#fef3c7}
+[data-theme="dark"] .reading-result mark.reading-vi{background:#166534;color:#dcfce7}
+.reader-modal{position:fixed;inset:0;z-index:1200;background:rgba(15,23,42,.68);display:none;align-items:center;justify-content:center;padding:14px}
+.reader-modal.open{display:flex}
+.reader-card{width:min(900px,100%);max-height:92vh;overflow:auto;background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:18px;padding:clamp(18px,4vw,38px);box-shadow:var(--shadow)}
+.reader-content{white-space:pre-wrap;overflow-wrap:anywhere;line-height:2;font-size:18px;letter-spacing:.01em;padding:clamp(14px,3vw,28px);border:1px solid var(--border);border-radius:12px;background:var(--bg);margin-top:18px}
+.reader-content mark{border-radius:4px;padding:1px 3px;font-weight:800}
+.reader-content mark.reading-en{background:#fde68a;color:#78350f}
+.reader-content mark.reading-vi{background:#bbf7d0;color:#14532d}
+[data-theme="dark"] .reader-content mark.reading-en{background:#854d0e;color:#fef3c7}
+[data-theme="dark"] .reader-content mark.reading-vi{background:#166534;color:#dcfce7}
+.reader-meta{color:var(--muted);font-size:13px;margin-top:5px}
+@media(max-width:600px){.reader-content{font-size:16px;line-height:1.9}}
+
 </style>
 </head>
 <body>
@@ -329,6 +358,32 @@ input,select{max-width:100%}
   </div><p class="muted" id="editorHint">Nhập thông tin file và từ vựng.</p><div class="row"><button class="btn primary" type="submit">Lưu</button><button class="btn secondary" type="button" data-close-modal="fileEditorModal">Hủy</button></div></form>
  </div>
 </div>
+
+<div id="readingModal" class="reading-modal" role="dialog" aria-modal="true" aria-labelledby="readingTitle">
+ <div class="reading-card">
+  <div class="toolbar"><div><h2 id="readingTitle" style="margin:0">📖 BÀI ĐỌC</h2><span id="readingFileName" class="muted"></span></div><button class="btn secondary" type="button" id="closeReading">Đóng ✕</button></div>
+  <p class="muted">Dán văn bản tiếng Anh vào ô dưới. Các từ/cụm từ trong file từ vựng này sẽ được highlight, không phân biệt chữ hoa/thường; cụm dài được ưu tiên.</p>
+  <textarea id="readingInput" class="reading-input" placeholder="Dán bài đọc của bạn vào đây..."></textarea>
+  <div class="row" style="margin:12px 0"><button id="checkReading" class="btn secondary" type="button">🔎 Kiểm tra / Highlight</button><button id="saveReading" class="btn primary" type="button">💾 Lưu bài đọc</button><button id="openReaderView" class="btn success" type="button">📖 Reader View</button><button id="clearReading" class="btn secondary" type="button">Xóa văn bản</button></div>
+  <div class="reading-stats" id="readingStats">Chưa có kết quả.</div>
+  <h3>Kết quả highlight</h3><div id="readingResult" class="reading-result" aria-live="polite">Kết quả sẽ hiển thị tại đây.</div>
+ </div>
+</div>
+
+<div id="readerModal" class="reader-modal" role="dialog" aria-modal="true" aria-labelledby="readerTitle">
+  <article class="reader-card">
+    <div class="toolbar">
+      <div><h2 id="readerTitle" style="margin:0">📖 Reader View</h2><div id="readerFileName" class="reader-meta"></div></div>
+      <button class="btn secondary" type="button" id="closeReaderView">Đóng ✕</button>
+    </div>
+    <div class="row" style="margin-top:14px">
+      <button class="btn primary" type="button" id="editSavedReading">✏️ Chỉnh sửa bài đọc</button>
+    </div>
+    <div id="readerContent" class="reader-content"></div>
+    <div id="readerSavedMeta" class="reader-meta"></div>
+  </article>
+</div>
+
 </main>
 
 <script>
@@ -1225,7 +1280,7 @@ function mergeFiles(){
 }
 function renderManageGridWithMerge(){
   const q=$("manageSearch").value,list=db.files.filter(f=>fileMatches(f,q));
-  $("manageGrid").innerHTML=list.length?list.map(f=>`<div class="file-card"><div class="row"><input class="checkbox merge-check" type="checkbox" value="${f.id}"><b>Chọn gộp</b></div><h3>📘 ${escapeHtml(f.name)}</h3><div class="file-meta">${f.words.length} từ</div><div class="row"><button class="btn primary" data-open="${f.id}">▶ Luyện tập</button><button class="btn secondary" data-detail="${f.id}">🔍 Chi tiết</button><button class="btn secondary" data-rename-file="${f.id}">✏️ Đổi tên</button><button class="btn danger" data-delete-file="${f.id}">🗑 Xóa file</button></div></div>`).join(""):`<div class="empty">Không tìm thấy file.</div>`;
+  $("manageGrid").innerHTML=list.length?list.map(f=>`<div class="file-card"><div class="row"><input class="checkbox merge-check" type="checkbox" value="${f.id}"><b>Chọn gộp</b></div><h3>📘 ${escapeHtml(f.name)}</h3><div class="file-meta">${f.words.length} từ</div><div class="row"><button class="btn primary" data-open="${f.id}">▶ Luyện tập</button><button class="btn secondary" data-detail="${f.id}">🔍 Chi tiết</button><button class="btn primary" data-reading="${f.id}" type="button">📖 BÀI ĐỌC</button><button class="btn success" data-reader-view="${f.id}" type="button" ${f.readingSavedAt?'':'disabled title="Chưa có bài đọc được lưu"'}>📚 Reader View</button><button class="btn secondary" data-rename-file="${f.id}">✏️ Đổi tên</button><button class="btn danger" data-delete-file="${f.id}">🗑 Xóa file</button></div></div>`).join(""):`<div class="empty">Không tìm thấy file.</div>`;
   $("manageGrid").querySelectorAll("[data-open]").forEach(b=>b.onclick=()=>openFile(b.dataset.open));$("manageGrid").querySelectorAll("[data-detail]").forEach(b=>b.onclick=()=>openDetail(b.dataset.detail));$("manageGrid").querySelectorAll("[data-delete-file]").forEach(b=>b.onclick=()=>deleteFile(b.dataset.deleteFile));
   $("manageGrid").querySelectorAll("[data-rename-file]").forEach(b=>b.onclick=()=>renameFile(b.dataset.renameFile));
   $("manageGrid").insertAdjacentHTML("afterbegin",`<div style="grid-column:1/-1"><button class="btn primary" id="mergeSelected">🔗 Gộp các file đã chọn</button></div>`);
@@ -1436,7 +1491,7 @@ renderAll();
     const q=$(manage?'manageSearch':'librarySearch')?.value||'';
     const visibleFiles=db.files.filter(f=>(openedFolderId?f.folderId===openedFolderId:!f.folderId)&&fileMatches(f,q));
     const visibleFolders=openedFolderId?[]:db.folders.filter(f=>norm(f.name).includes(norm(q)));
-    const cards=visibleFolders.map(f=>folderCard(f,manage)).join('')+visibleFiles.map(f=>manage?`<div class="file-card"><div class="row"><input class="checkbox merge-check" type="checkbox" value="${f.id}"><b>Chọn gộp</b></div><h3>📘 ${escapeHtml(f.name)}</h3><div class="file-meta">${f.words.length} từ · ${escapeHtml(f.source||'file')}${f.folderId?' · 📁 '+escapeHtml(folderName(f.folderId)):''}</div><div class="row"><button class="btn primary" data-open="${f.id}">▶ Luyện tập</button><button class="btn secondary" data-detail="${f.id}">🔍 Chi tiết</button><button class="btn secondary" data-rename-file="${f.id}">✏️ Đổi tên</button><button class="btn danger" data-delete-file="${f.id}">🗑 Xóa file</button><select aria-label="Chuyển thư mục" data-vk-place-file="${f.id}" style="max-width:180px;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text)"><option value="">Ngoài thư mục</option>${db.folders.map(d=>`<option value="${d.id}" ${f.folderId===d.id?'selected':''}>📁 ${escapeHtml(d.name)}</option>`).join('')}</select></div></div>`:fileCard(f)).join('');
+    const cards=visibleFolders.map(f=>folderCard(f,manage)).join('')+visibleFiles.map(f=>manage?`<div class="file-card"><div class="row"><input class="checkbox merge-check" type="checkbox" value="${f.id}"><b>Chọn gộp</b></div><h3>📘 ${escapeHtml(f.name)}</h3><div class="file-meta">${f.words.length} từ · ${escapeHtml(f.source||'file')}${f.folderId?' · 📁 '+escapeHtml(folderName(f.folderId)):''}</div><div class="row"><button class="btn primary" data-open="${f.id}">▶ Luyện tập</button><button class="btn secondary" data-detail="${f.id}">🔍 Chi tiết</button><button class="btn primary" data-reading="${f.id}" type="button">📖 BÀI ĐỌC</button><button class="btn success" data-reader-view="${f.id}" type="button" ${f.readingSavedAt?'':'disabled title="Chưa có bài đọc được lưu"'}>📚 Reader View</button><button class="btn secondary" data-rename-file="${f.id}">✏️ Đổi tên</button><button class="btn danger" data-delete-file="${f.id}">🗑 Xóa file</button><select aria-label="Chuyển thư mục" data-vk-place-file="${f.id}" style="max-width:180px;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text)"><option value="">Ngoài thư mục</option>${db.folders.map(d=>`<option value="${d.id}" ${f.folderId===d.id?'selected':''}>📁 ${escapeHtml(d.name)}</option>`).join('')}</select></div></div>`:fileCard(f)).join('');
     el.innerHTML=(manage&&!openedFolderId?`<div style="grid-column:1/-1"><button class="btn primary" id="mergeSelected" type="button">🔗 Gộp các file đã chọn</button></div>`:'')+(cards||`<div class="empty">${openedFolderId?'Thư mục này chưa có file phù hợp.':'Chưa có file hoặc thư mục phù hợp.'}</div>`);
     bindFolderCards(containerId);
     if(manage&&$('mergeSelected'))$('mergeSelected').onclick=()=>mergeFiles();
@@ -1453,6 +1508,133 @@ renderAll();
   // Folder view state and new folder metadata are preserved when the normal render cycle runs.
   const originalDeleteFile=deleteFile;
   deleteFile=function(id){originalDeleteFile(id);if(openedFolderId&&!db.folders.some(f=>f.id===openedFolderId))openedFolderId=null};
+
+  // Reading/highlight feature is isolated from the existing learning modules.
+  let readingFileId=null;
+  function readingTerms(file){
+    const terms=[];
+    (file.words||[]).forEach(w=>{
+      const en=String(w.word||w.vocab||'').trim();
+      const vi=String(w.meaning||'').trim();
+      if(en)terms.push({text:en,lang:'en'});
+      if(vi)terms.push({text:vi,lang:'vi'});
+    });
+    // Longest phrase wins. If an English term and Vietnamese meaning are identical,
+    // keep one occurrence so it is not double-counted.
+    const unique=new Map();
+    terms.sort((a,b)=>b.text.length-a.text.length);
+    terms.forEach(t=>{
+      const key=t.text.toLocaleLowerCase();
+      if(!unique.has(key))unique.set(key,t);
+    });
+    return [...unique.values()].sort((a,b)=>b.text.length-a.text.length);
+  }
+  function buildReadingHighlight(source,file){
+    const terms=readingTerms(file);
+    if(!source)return {html:'',count:0,matched:new Set(),terms:0};
+    if(!terms.length)return {html:escapeHtml(source),count:0,matched:new Set(),terms:0};
+    const escapeRegex=x=>x.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+    const pattern=terms.map(t=>escapeRegex(t.text)).join('|');
+    let re;
+    try{re=new RegExp('(?<![\\p{L}\\p{N}_])('+pattern+')(?![\\p{L}\\p{N}_])','giu')}
+    catch(e){re=new RegExp('(^|[^A-Za-z0-9_])('+pattern+')(?=$|[^A-Za-z0-9_])','gi')}
+    const lookup=new Map(terms.map(t=>[t.text.toLocaleLowerCase(),t]));
+    let out='',last=0,count=0;
+    const matched=new Set();
+    let m;
+    while((m=re.exec(source))!==null){
+      // Fallback regex captures the preceding boundary separately; preserve it outside <mark>.
+      const fallback=re.source.startsWith('(^|');
+      const full=fallback?m[0]:m[0];
+      const value=fallback?(m[2]||''):m[1];
+      const index=fallback?m.index+(m[1]||'').length:m.index;
+      if(!value){re.lastIndex++;continue}
+      out+=escapeHtml(source.slice(last,index));
+      const term=lookup.get(value.toLocaleLowerCase());
+      const cls=term&&term.lang==='vi'?'reading-vi':'reading-en';
+      out+='<mark class="'+cls+'" title="'+(cls==='reading-vi'?'Nghĩa tiếng Việt':'Từ vựng tiếng Anh')+'">'+escapeHtml(value)+'</mark>';
+      last=index+value.length;count++;matched.add(value.toLocaleLowerCase());
+    }
+    out+=escapeHtml(source.slice(last));
+    return {html:out,count,matched,terms:terms.length};
+  }
+  function refreshReadingPreview(){
+    const f=fileById(readingFileId);if(!f)return null;
+    const source=$('readingInput').value||'';
+    const result=buildReadingHighlight(source,f);
+    $('readingResult').innerHTML=result.html||'Dán văn bản vào ô phía trên để bắt đầu.';
+    $('readingStats').textContent=source
+      ?`Bản xem trước: ${result.count} lần highlight · ${result.matched.size} mục từ vựng khớp (Anh - Việt). Chưa lưu thay đổi.`
+      :'Chưa có văn bản.';
+    return {file:f,source,result};
+  }
+  function openReading(id){
+    const f=fileById(id);if(!f)return;
+    readingFileId=id;
+    $('readingFileName').textContent='File từ vựng: '+f.name;
+    $('readingInput').value=String(f.readingText||'');
+    $('readingModal').classList.add('open');
+    refreshReadingPreview();
+    $('readingStats').textContent=f.readingSavedAt
+      ?'Đã lưu bài đọc. Bạn có thể chỉnh sửa rồi bấm “Lưu bài đọc” để cập nhật.'
+      :'Bài đọc chưa được lưu. Hãy dán văn bản và bấm “Lưu bài đọc”.';
+  }
+  function saveReading(){
+    const current=refreshReadingPreview();if(!current)return;
+    if(!current.source.trim()){showMessage('Hãy nhập hoặc dán nội dung bài đọc trước khi lưu.','warn');return}
+    current.file.readingText=current.source;
+    current.file.readingHtml=current.result.html;
+    current.file.readingHighlightCount=current.result.count;
+    current.file.readingMatchedCount=current.result.matched.size;
+    current.file.readingSavedAt=new Date().toISOString();
+    save();
+    renderAll();
+    $('readingStats').textContent=`Đã lưu bài đọc · ${current.result.count} lần highlight · ${current.result.matched.size} mục từ vựng khớp.`;
+    showMessage('Đã lưu bài đọc cùng trạng thái highlight vào file "'+current.file.name+'".','ok');
+  }
+  function openReaderView(id){
+    const f=fileById(id||readingFileId);if(!f)return;
+    readingFileId=f.id;
+    if(!f.readingSavedAt||!String(f.readingText||'').trim()){
+      showMessage('File này chưa có bài đọc được lưu. Hãy mở BÀI ĐỌC và bấm “Lưu bài đọc” trước.','warn');
+      return;
+    }
+    // Rebuild highlighted HTML from saved plain text and the current file vocabulary.
+    // This avoids injecting stored HTML and keeps both English and Vietnamese matches current.
+    const result=buildReadingHighlight(String(f.readingText||''),f);
+    $('readerFileName').textContent='📘 '+f.name;
+    $('readerContent').innerHTML=result.html;
+    const date=new Date(f.readingSavedAt);
+    $('readerSavedMeta').textContent=`Đã lưu ${Number.isNaN(date.getTime())?'':date.toLocaleString('vi-VN')} · ${result.count} lần highlight · ${result.matched.size} mục từ vựng khớp`;
+    $('readerModal').classList.add('open');
+  }
+  $('checkReading').onclick=refreshReadingPreview;
+  $('saveReading').onclick=saveReading;
+  $('openReaderView').onclick=()=>openReaderView(readingFileId);
+  $('readingInput').addEventListener('input',refreshReadingPreview);
+  $('clearReading').onclick=()=>{$('readingInput').value='';refreshReadingPreview()};
+  $('closeReading').onclick=()=>{$('readingModal').classList.remove('open');readingFileId=null};
+  $('readingModal').addEventListener('click',e=>{if(e.target===$('readingModal')){$('readingModal').classList.remove('open');readingFileId=null}});
+  $('closeReaderView').onclick=()=>$('readerModal').classList.remove('open');
+  $('readerModal').addEventListener('click',e=>{if(e.target===$('readerModal'))$('readerModal').classList.remove('open')});
+  $('editSavedReading').onclick=()=>{
+    const id=readingFileId;
+    $('readerModal').classList.remove('open');
+    if(id)openReading(id);
+  };
+  document.addEventListener('keydown',e=>{
+    if(e.key==='Escape'){
+      $('readingModal').classList.remove('open');
+      $('readerModal').classList.remove('open');
+      readingFileId=null;
+    }
+  });
+  document.addEventListener('click',e=>{
+    const b=e.target.closest('[data-reading]');
+    if(b){e.preventDefault();openReading(b.dataset.reading);return}
+    const readerBtn=e.target.closest('[data-reader-view]');
+    if(readerBtn){e.preventDefault();openReaderView(readerBtn.dataset.readerView)}
+  });
   // Re-render folder-aware views after installation.
   if(typeof db!=='undefined'&&Array.isArray(db.files))renderAll();
 })();
