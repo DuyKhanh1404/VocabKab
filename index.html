@@ -188,6 +188,15 @@ input,select{max-width:100%}
 .reader-meta{color:var(--muted);font-size:13px;margin-top:5px}
 @media(max-width:600px){.reader-content{font-size:16px;line-height:1.9}}
 
+.vk-sr-flash-ratings{width:100%;margin-top:8px}
+.vk-sr-flash-ratings .controls{gap:6px}
+.vk-sr-flash-ratings .btn{padding:8px 11px;font-size:13px;min-height:38px}
+@media(max-width:600px){.vk-sr-flash-ratings .btn{padding:7px 9px;font-size:12px}}
+/* Màu nền riêng cho 4 mức đánh giá SM-2 ở Flashcard và Fanki. */
+[data-flash-sr-rating="easy"], [data-sr-rating="easy"] { background: #166534 !important; border-color: #14532d !important; color: #ffffff !important; }
+[data-flash-sr-rating="good"], [data-sr-rating="good"] { background: #0891b2 !important; border-color: #0e7490 !important; color: #ffffff !important; }
+[data-flash-sr-rating="hard"], [data-sr-rating="hard"] { background: #f97316 !important; border-color: #ea580c !important; color: #ffffff !important; }
+[data-flash-sr-rating="again"], [data-sr-rating="again"] { background: #dc2626 !important; border-color: #b91c1c !important; color: #ffffff !important; }
 </style>
 </head>
 <body>
@@ -209,6 +218,7 @@ input,select{max-width:100%}
 <nav>
   <button class="nav-btn active" data-view="library">📚 Tổng hợp</button>
   <button class="nav-btn" data-view="flashcard">🃏 Flashcard</button>
+  <button class="nav-btn" data-view="fanki">🧠 Fanki</button>
   <button class="nav-btn" data-view="quiz">📝 Quiz</button>
   <button class="nav-btn" data-view="fill">✍️ Điền từ</button>
   <button class="nav-btn" data-view="recall">🧠 Viết nghĩa</button>
@@ -256,10 +266,27 @@ input,select{max-width:100%}
     <div id="flashArea" class="hidden">
       <div class="flash"><div id="flashInner" class="flash-inner">
         <div class="face"><small class="muted">TỪ VỰNG</small><div id="flashWord" class="big"></div><div id="flashType" class="badge"></div><p class="muted">Bấm thẻ để lật</p></div>
-        <div class="face back"><small class="muted">NGHĨA</small><div id="flashMeaning" class="meaning"></div><div id="flashExample" class="flash-example hidden"></div></div>
+        <div class="face back"><small class="muted">NGHĨA</small><div id="flashMeaning" class="meaning"></div><div id="flashExample" class="flash-example hidden"></div><div class="vk-sr-flash-ratings"><p class="muted" style="margin:12px 0 6px">Đánh giá độ nhớ</p><div class="controls"><button class="btn danger" data-flash-sr-rating="again" type="button">Quên</button><button class="btn secondary" data-flash-sr-rating="hard" type="button">Khó</button><button class="btn primary" data-flash-sr-rating="good" type="button">Tốt</button><button class="btn success" data-flash-sr-rating="easy" type="button">Dễ</button></div><small id="flashSrStatus" class="muted"></small></div></div>
       </div></div>
       <div class="controls"><button class="btn secondary" id="prevFlash">← Trước</button><button class="btn primary" id="flipFlash">🔄 Lật</button><button class="btn secondary" id="nextFlash">Sau →</button></div>
       <p id="flashCounter" class="muted" style="text-align:center"></p>
+    </div>
+  </div></section>
+
+  <section id="fanki" class="view"><div class="panel">
+    <div class="toolbar"><div><h2 style="margin:0">🧠 Fanki — Ôn tập ngắt quãng</h2><span class="muted">Tự động gom từ đến hạn từ tất cả file/chủ đề.</span></div></div>
+    <p id="srStats" class="muted">Đang tải thống kê…</p>
+    <div id="srEmpty" class="empty">Đang kiểm tra thẻ đến hạn…</div>
+    <div id="srArea" class="hidden">
+      <div class="progress"><i id="srProgress" style="width:0%"></i></div><p id="srCounter" class="muted" style="text-align:center"></p>
+      <div class="flash"><div id="srFlashInner" class="flash-inner">
+        <div class="face"><small class="muted">TỪ VỰNG</small><div id="srWord" class="big"></div><div id="srType" class="badge"></div><p class="muted">Bấm thẻ hoặc nút Lật để xem nghĩa</p></div>
+        <div class="face back"><small class="muted">NGHĨA</small><div id="srMeaning" class="meaning"></div><div id="srExample" class="flash-example hidden"></div></div>
+      </div></div>
+      <div class="controls"><button id="srFlip" class="btn secondary" type="button">🔄 Lật thẻ</button></div>
+      <div id="srRatings" class="controls hidden" style="margin-top:12px">
+        <button class="btn danger" data-sr-rating="again" type="button">Quên / Again</button><button class="btn secondary" data-sr-rating="hard" type="button">Khó / Hard</button><button class="btn primary" data-sr-rating="good" type="button">Tốt / Good</button><button class="btn success" data-sr-rating="easy" type="button">Dễ / Easy</button>
+      </div><p id="srHint" class="muted" style="text-align:center"></p><p id="srReviewCount" class="muted" style="text-align:center"></p>
     </div>
   </div></section>
 
@@ -918,6 +945,10 @@ function startFlash(){const f=fileById(activeFileId);$("activeFileFlash").textCo
 function renderFlash(){
   const f=fileById(activeFileId);if(!f||!f.words.length)return;
   flashIndex=(flashIndex+f.words.length)%f.words.length;const w=f.words[flashIndex];
+  // Mỗi thẻ mới được chọn bắt đầu với các nút đánh giá được bật lại.
+  flashSrRatedRating=null;
+  document.querySelectorAll("[data-flash-sr-rating]").forEach(button=>{button.disabled=false;button.classList.remove("hidden")});
+  const flashSrStatus=$("flashSrStatus");if(flashSrStatus)flashSrStatus.textContent="";
   const enToVi=flashDirection==="en-vi";
   const flashFrontLabel=$("flashFrontLabel");
   const flashBackLabel=$("flashBackLabel");
@@ -942,8 +973,18 @@ function renderFlash(){
   $("flashCounter").textContent=`${flashIndex+1} / ${f.words.length}`;
   $("flashInner").classList.remove("flip");
 }
-$("flashInner").onclick=()=>$("flashInner").classList.toggle("flip");
-$("flipFlash").onclick=()=>$("flashInner").classList.toggle("flip");
+let flashSrRatedRating=null;
+function toggleFlashFlip(){
+  $("flashInner").classList.toggle("flip");
+  // Khi lật thẻ qua lại, cho phép đánh giá lại thẻ hiện tại.
+  if(flashSrRatedRating!==null){
+    flashSrRatedRating=null;
+    document.querySelectorAll("[data-flash-sr-rating]").forEach(button=>{button.disabled=false;button.classList.remove("hidden")});
+    const status=$("flashSrStatus");if(status)status.textContent="";
+  }
+}
+$("flashInner").onclick=toggleFlashFlip;
+$("flipFlash").onclick=toggleFlashFlip;
 $("nextFlash").onclick=()=>{flashIndex++;renderFlash()};
 $("prevFlash").onclick=()=>{flashIndex--;renderFlash()};
 document.querySelectorAll("[data-flash-direction]").forEach(b=>b.onclick=()=>{
@@ -1303,7 +1344,7 @@ $("fillLimit").onchange=()=>{if(fileById(activeFileId))startFill()};
 document.addEventListener("keydown",e=>{
   if(["INPUT","TEXTAREA"].includes(document.activeElement?.tagName))return;
   if($("flashcard").classList.contains("active")){
-    if(e.key==="ArrowRight"){flashIndex++;renderFlash()}if(e.key==="ArrowLeft"){flashIndex--;renderFlash()}if(e.key===" "){e.preventDefault();$("flashInner").classList.toggle("flip")}
+    if(e.key==="ArrowRight"){flashIndex++;renderFlash()}if(e.key==="ArrowLeft"){flashIndex--;renderFlash()}if(e.key===" "){e.preventDefault();toggleFlashFlip()}
   }
 });
 
@@ -1638,6 +1679,65 @@ renderAll();
   // Re-render folder-aware views after installation.
   if(typeof db!=='undefined'&&Array.isArray(db.files))renderAll();
 })();
+
+/* VocabKab SM-2: isolated schedule storage; does not alter existing word/progress schema. */
+(()=>{
+  const SR_KEY="vocabKabSpacedRepetition_v1";
+  const srState={queue:[],index:0,current:null,session:false};
+  const srEl=id=>document.getElementById(id);
+  function srLoad(){try{const d=JSON.parse(localStorage.getItem(SR_KEY)||"{}");return d&&typeof d==="object"?d:{}}catch{return {}}}
+  function srSave(data){localStorage.setItem(SR_KEY,JSON.stringify(data))}
+  function srKey(fileId,wordId){return String(fileId)+"::"+String(wordId)}
+  function srTodayStart(date=new Date()){return new Date(date.getFullYear(),date.getMonth(),date.getDate()).getTime()}
+  function srDueDate(days,from=new Date()){const d=new Date(from.getFullYear(),from.getMonth(),from.getDate());d.setDate(d.getDate()+Math.max(1,days));return d.toISOString()}
+  function srDefaults(){return {interval:0,repetition:0,easeFactor:2.5,dueDate:new Date(0).toISOString(),reviewCount:0}}
+  function calculateSM2(oldCard,rating,now=new Date()){
+    const old={...srDefaults(),...(oldCard||{})},quality={again:0,hard:3,good:4,easy:5}[rating];
+    if(quality===undefined)throw new Error("Mức đánh giá không hợp lệ.");
+    let repetition=Math.max(0,Number(old.repetition)||0),interval=Math.max(0,Number(old.interval)||0),easeFactor=Math.max(1.3,Number(old.easeFactor)||2.5);
+    if(quality<3){repetition=0;interval=1}
+    else{repetition++;if(repetition===1)interval=1;else if(repetition===2)interval=6;else interval=Math.max(1,Math.round(interval*easeFactor));if(rating==="hard")interval=Math.max(1,Math.round(interval*1.2));if(rating==="easy")interval=Math.max(1,Math.round(interval*1.3))}
+    easeFactor=Math.max(1.3,easeFactor+(0.1-(5-quality)*(0.08+(5-quality)*0.02)));
+    return {interval,repetition,easeFactor:Number(easeFactor.toFixed(2)),dueDate:srDueDate(interval,now),lastReviewedAt:now.toISOString(),lastRating:rating,reviewCount:(Number(old.reviewCount)||0)+1};
+  }
+  function srAllCards(){const data=srLoad(),all=[];(Array.isArray(db.files)?db.files:[]).forEach(file=>(file.words||[]).forEach((word,index)=>{const key=srKey(file.id,word.id??index);all.push({key,file,word,schedule:data[key]||srDefaults()})}));return all}
+  function srHasBeenRated(card){
+    const s=card&&card.schedule||{};
+    // dueDate mặc định là mốc 1970; chỉ tính dữ liệu lịch đã được ghi nhận qua lần đánh giá.
+    return !!s.lastReviewedAt || Number(s.reviewCount)>0 || Number(s.repetition)>0 ||
+      (Number.isFinite(Date.parse(s.dueDate)) && Date.parse(s.dueDate)>Date.parse("2000-01-01T00:00:00Z"));
+  }
+  function srIsDue(card,now=new Date()){return srHasBeenRated(card)&&Date.parse(card.schedule.dueDate)<=srTodayStart(now)+86400000-1}
+  function srRenderStats(){const all=srAllCards().filter(srHasBeenRated),due=all.filter(c=>srIsDue(c)).length;srEl("srStats").textContent=`Tổng ${all.length} thẻ đã đánh giá · ${due} thẻ đến hạn`;}
+  function srStart(){srState.queue=srAllCards().filter(c=>srHasBeenRated(c)&&srIsDue(c));srState.index=0;srState.session=true;srEl("srArea").classList.toggle("hidden",!srState.queue.length);srEl("srEmpty").classList.toggle("hidden",!!srState.queue.length);if(!srState.queue.length){srEl("srEmpty").textContent="🎉 Hiện không có thẻ đến hạn.";srRenderStats();return}srRenderCard()}
+  function srRenderCard(){const item=srState.queue[srState.index];if(!item){srState.session=false;srEl("srArea").classList.add("hidden");srEl("srEmpty").classList.remove("hidden");srEl("srEmpty").textContent="🎉 Đã hoàn thành các thẻ đến hạn hôm nay!";srRenderStats();return}
+    srState.current=item;srEl("srWord").textContent=item.word.word||"";srEl("srType").textContent=item.word.type||"";srEl("srMeaning").textContent=item.word.meaning||"";srEl("srExample").textContent=item.word.example||"";srEl("srExample").classList.toggle("hidden",!String(item.word.example||"").trim());srEl("srFlashInner").classList.remove("flip");srEl("srRatings").classList.add("hidden");
+    srEl("srCounter").textContent=`${srState.index+1} / ${srState.queue.length} · ${item.file.name}`;srEl("srProgress").style.width=`${Math.round(srState.index/srState.queue.length*100)}%`;srEl("srHint").textContent=`Khoảng cách: ${item.schedule.interval||0} ngày · Lịch ôn: ${item.schedule.lastReviewedAt?new Date(item.schedule.dueDate).toLocaleDateString("vi-VN"):"Thẻ mới"}`;srEl("srReviewCount").textContent=`Tổng số lần đã ôn/đánh giá từ này: ${Number(item.schedule.reviewCount)||0}`;
+  }
+  function srFlip(){const flipped=srEl("srFlashInner").classList.toggle("flip");srEl("srRatings").classList.toggle("hidden",!flipped)}
+  function srRate(rating){const item=srState.current;if(!item)return;const data=srLoad();data[item.key]=calculateSM2(data[item.key]||srDefaults(),rating);srSave(data);srState.index++;srRenderCard();srRenderStats()}
+  function rateFlashcard(rating){
+    const file=fileById(activeFileId);if(!file||!file.words[flashIndex]||flashSrRatedRating!==null)return;
+    const word=file.words[flashIndex],key=srKey(file.id,word.id??flashIndex),data=srLoad();
+    data[key]=calculateSM2(data[key]||srDefaults(),rating);srSave(data);
+    flashSrRatedRating=rating;
+    document.querySelectorAll("[data-flash-sr-rating]").forEach(button=>{
+      const selected=button.dataset.flashSrRating===rating;
+      button.disabled=!selected;
+      button.classList.toggle("hidden",!selected);
+    });
+    const status=srEl("flashSrStatus");if(status)status.textContent=`Đã lưu · ôn lại ${data[key].reviewCount} lần · tiếp theo ${new Date(data[key].dueDate).toLocaleDateString("vi-VN")}`;
+    srRenderStats();
+  }
+  srEl("srFlip").addEventListener("click",e=>{e.stopPropagation();srFlip()});
+  srEl("srFlashInner").addEventListener("click",srFlip);
+  document.querySelectorAll("[data-sr-rating]").forEach(button=>button.addEventListener("click",e=>{e.stopPropagation();srRate(button.dataset.srRating)}));
+  document.querySelectorAll("[data-flash-sr-rating]").forEach(button=>button.addEventListener("click",e=>{e.stopPropagation();rateFlashcard(button.dataset.flashSrRating)}));
+  document.querySelectorAll(".nav-btn[data-view='fanki']").forEach(button=>button.addEventListener("click",srStart));
+  window.VocabKabSM2={calculateSM2,getSchedule:()=>srLoad(),getDueCards:()=>srAllCards().filter(c=>srIsDue(c)),rateWord:(fileId,wordId,rating)=>{const data=srLoad(),key=srKey(fileId,wordId);data[key]=calculateSM2(data[key]||srDefaults(),rating);srSave(data);return data[key]}};
+  srRenderStats();
+})();
+
 </script>
 
 </body>
