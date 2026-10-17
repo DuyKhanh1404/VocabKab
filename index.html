@@ -18,7 +18,9 @@
 <link rel="manifest" href="./manifest.json">
 <link rel="apple-touch-icon" href="./icons/icon-192.png">
 <title>VocabKab — Vocabulary Learning</title>
-<script src="https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js">
+
+</script>
 <!-- Firebase Compat SDK: dùng chung một kiểu SDK, không trộn ES Module import. -->
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
@@ -197,6 +199,11 @@ input,select{max-width:100%}
 [data-flash-sr-rating="good"], [data-sr-rating="good"] { background: #0891b2 !important; border-color: #0e7490 !important; color: #ffffff !important; }
 [data-flash-sr-rating="hard"], [data-sr-rating="hard"] { background: #f97316 !important; border-color: #ea580c !important; color: #ffffff !important; }
 [data-flash-sr-rating="again"], [data-sr-rating="again"] { background: #dc2626 !important; border-color: #b91c1c !important; color: #ffffff !important; }
+
+/* Text-to-Speech additions */
+.speak-btn{display:inline-flex;align-items:center;justify-content:center;min-width:38px;min-height:38px;margin:6px;border:1px solid var(--border);border-radius:10px;background:var(--card);color:var(--text);font-size:18px;vertical-align:middle}
+.speak-btn:hover{background:var(--hover);border-color:var(--primary)}
+.speak-word-cell{display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap}
 </style>
 </head>
 <body>
@@ -265,7 +272,7 @@ input,select{max-width:100%}
     <div id="flashEmpty" class="empty">Hãy chọn một bài tập.</div>
     <div id="flashArea" class="hidden">
       <div class="flash"><div id="flashInner" class="flash-inner">
-        <div class="face"><small class="muted">TỪ VỰNG</small><div id="flashWord" class="big"></div><div id="flashType" class="badge"></div><p class="muted">Bấm thẻ để lật</p></div>
+        <div class="face"><small class="muted">TỪ VỰNG</small><div class="speak-word-cell"><div id="flashWord" class="big"></div><button class="speak-btn" id="speakFlashWord" type="button" aria-label="Phát âm từ tiếng Anh" title="Phát âm tiếng Anh">🔊</button></div><div id="flashType" class="badge"></div><p class="muted">Bấm thẻ để lật</p></div>
         <div class="face back"><small class="muted">NGHĨA</small><div id="flashMeaning" class="meaning"></div><div id="flashExample" class="flash-example hidden"></div><div class="vk-sr-flash-ratings"><p class="muted" style="margin:12px 0 6px">Đánh giá độ nhớ</p><div class="controls"><button class="btn danger" data-flash-sr-rating="again" type="button">Quên</button><button class="btn secondary" data-flash-sr-rating="hard" type="button">Khó</button><button class="btn primary" data-flash-sr-rating="good" type="button">Tốt</button><button class="btn success" data-flash-sr-rating="easy" type="button">Dễ</button></div><small id="flashSrStatus" class="muted"></small></div></div>
       </div></div>
       <div class="controls"><button class="btn secondary" id="prevFlash">← Trước</button><button class="btn primary" id="flipFlash">🔄 Lật</button><button class="btn secondary" id="nextFlash">Sau →</button></div>
@@ -280,7 +287,7 @@ input,select{max-width:100%}
     <div id="srArea" class="hidden">
       <div class="progress"><i id="srProgress" style="width:0%"></i></div><p id="srCounter" class="muted" style="text-align:center"></p>
       <div class="flash"><div id="srFlashInner" class="flash-inner">
-        <div class="face"><small class="muted">TỪ VỰNG</small><div id="srWord" class="big"></div><div id="srType" class="badge"></div><p class="muted">Bấm thẻ hoặc nút Lật để xem nghĩa</p></div>
+        <div class="face"><small class="muted">TỪ VỰNG</small><div class="speak-word-cell"><div id="srWord" class="big"></div><button class="speak-btn" id="speakSrWord" type="button" aria-label="Phát âm từ tiếng Anh" title="Phát âm tiếng Anh">🔊</button></div><div id="srType" class="badge"></div><p class="muted">Bấm thẻ hoặc nút Lật để xem nghĩa</p></div>
         <div class="face back"><small class="muted">NGHĨA</small><div id="srMeaning" class="meaning"></div><div id="srExample" class="flash-example hidden"></div></div>
       </div></div>
       <div class="controls"><button id="srFlip" class="btn secondary" type="button">🔄 Lật thẻ</button></div>
@@ -429,6 +436,25 @@ window.FIREBASE_CONFIG = {
   appId: "1:634186914698:web:1da78d0bd8955e49100673",
   measurementId: "G-2CR7GYJWZN"
 };
+
+/* VocabKab Text-to-Speech: phần bổ sung độc lập, không sửa parser hay dữ liệu từ vựng. */
+function speakEnglishWord(text){
+  const word=String(text||"").trim();
+  if(!word)return;
+  if(!("speechSynthesis" in window)||!("SpeechSynthesisUtterance" in window)){
+    showMessage("Trình duyệt này chưa hỗ trợ phát âm tự động.","warn");
+    return;
+  }
+  window.speechSynthesis.cancel();
+  const utterance=new SpeechSynthesisUtterance(word);
+  utterance.lang="en-US";
+  utterance.rate=0.85;
+  utterance.pitch=1;
+  const voices=window.speechSynthesis.getVoices();
+  const usVoice=voices.find(v=>/^en-US$/i.test(v.lang))||voices.find(v=>/^en-US/i.test(v.lang));
+  if(usVoice)utterance.voice=usVoice;
+  window.speechSynthesis.speak(utterance);
+}
 
 const DB_KEY="vocabKabExercises_v2", THEME_KEY="vocabKabTheme_v2", PROGRESS_KEY="vocabKabProgress_v2";
 const SETTINGS_KEY="vocabKabSettings_v1";
@@ -1239,7 +1265,7 @@ function renderDetail(){
   const f=fileById(activeFileId);if(!f){$("detailTitle").textContent="Chưa chọn file";$("detailBody").innerHTML="";$("deleteWords").disabled=true;return}
   $("detailTitle").textContent="📘 "+f.name;$("detailMeta").textContent=`${f.words.length} từ`;
   const q=norm($("detailSearch").value);const rows=f.words.map((w,i)=>({w,i})).filter(x=>!q||norm(x.w.word||x.w.vocab).includes(q)||norm(x.w.type).includes(q)||norm(x.w.meaning).includes(q)||norm(x.w.example||"").includes(q));
-  $("detailBody").innerHTML=rows.length?rows.map(x=>`<tr data-vk-row="${x.i}" class="${selectedDetail.has(x.i)?"vk-range-selected":""}"><td><input class="checkbox detail-check" data-i="${x.i}" type="checkbox" ${selectedDetail.has(x.i)?"checked":""}></td><td class="vk-stt">${x.i+1}</td><td><b>${escapeHtml(x.w.word||x.w.vocab||"")}</b></td><td><span class="badge">${escapeHtml(x.w.type||"")}</span></td><td>${escapeHtml(x.w.meaning||"")}</td><td>${escapeHtml(x.w.example||"")}</td><td><div class="row"><button class="btn secondary" data-edit-word="${x.i}" type="button">✏️ Sửa</button><button class="btn danger" data-one="${x.i}" type="button">Xóa</button></div></td></tr>`).join(""):`<tr><td colspan="7" class="empty">Không có từ phù hợp.</td></tr>`;
+  $("detailBody").innerHTML=rows.length?rows.map(x=>`<tr data-vk-row="${x.i}" class="${selectedDetail.has(x.i)?"vk-range-selected":""}"><td><input class="checkbox detail-check" data-i="${x.i}" type="checkbox" ${selectedDetail.has(x.i)?"checked":""}></td><td class="vk-stt">${x.i+1}</td><td><span class="speak-word-cell"><b>${escapeHtml(x.w.word||x.w.vocab||"")}</b><button class="speak-btn" type="button" data-speak-word="${escapeHtml(x.w.word||x.w.vocab||"")}" aria-label="Phát âm từ tiếng Anh" title="Phát âm tiếng Anh">🔊</button></span></td><td><span class="badge">${escapeHtml(x.w.type||"")}</span></td><td>${escapeHtml(x.w.meaning||"")}</td><td>${escapeHtml(x.w.example||"")}</td><td><div class="row"><button class="btn secondary" data-edit-word="${x.i}" type="button">✏️ Sửa</button><button class="btn danger" data-one="${x.i}" type="button">Xóa</button></div></td></tr>`).join(""):`<tr><td colspan="7" class="empty">Không có từ phù hợp.</td></tr>`;
   $("detailBody").querySelectorAll(".detail-check").forEach(c=>c.onchange=()=>{const i=+c.dataset.i;c.checked?selectedDetail.add(i):selectedDetail.delete(i);updateDetailControls()});
   $("detailBody").querySelectorAll("[data-one]").forEach(b=>b.onclick=()=>deleteOneWord(+b.dataset.one));
   $("detailBody").querySelectorAll("[data-edit-word]").forEach(b=>b.onclick=()=>editWord(+b.dataset.editWord));
@@ -1737,6 +1763,32 @@ renderAll();
   window.VocabKabSM2={calculateSM2,getSchedule:()=>srLoad(),getDueCards:()=>srAllCards().filter(c=>srIsDue(c)),rateWord:(fileId,wordId,rating)=>{const data=srLoad(),key=srKey(fileId,wordId);data[key]=calculateSM2(data[key]||srDefaults(),rating);srSave(data);return data[key]}};
   srRenderStats();
 })();
+
+// Text-to-Speech event handlers (isolated from existing learning logic).
+$("speakFlashWord")?.addEventListener("click",event=>{
+  event.stopPropagation();
+  const f=fileById(activeFileId);
+  if(f&&f.words.length){
+    const w=f.words[(flashIndex+f.words.length)%f.words.length];
+    speakEnglishWord(w.word||w.vocab||"");
+  }
+});
+$("speakSrWord")?.addEventListener("click",event=>{
+  event.stopPropagation();
+  const word=$("srWord")?.textContent||"";
+  // Fanki may display either English or Vietnamese depending on its current card.
+  const f=fileById(activeFileId);
+  const match=f?.words.find(w=>(w.word||w.vocab||"").toLowerCase()===word.trim().toLowerCase());
+  speakEnglishWord(match?(match.word||match.vocab):word);
+});
+document.addEventListener("click",event=>{
+  const button=event.target.closest("[data-speak-word]");
+  if(button){
+    event.preventDefault();
+    event.stopPropagation();
+    speakEnglishWord(button.getAttribute("data-speak-word"));
+  }
+});
 
 </script>
 
