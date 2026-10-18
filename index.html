@@ -1027,7 +1027,7 @@ function toggleFlashFlip(){
     const status=$("flashSrStatus");if(status)status.textContent="";
   }
 }
-$("flashInner").onclick=toggleFlashFlip;
+$("flashInner").onclick=event=>{if(event.target.closest("[data-speak-example]"))return;toggleFlashFlip();};
 $("flipFlash").onclick=toggleFlashFlip;
 $("nextFlash").onclick=()=>{flashIndex++;renderFlash()};
 $("prevFlash").onclick=()=>{flashIndex--;renderFlash()};
@@ -1794,7 +1794,7 @@ renderAll();
     srRenderStats();
   }
   srEl("srFlip").addEventListener("click",e=>{e.stopPropagation();srFlip()});
-  srEl("srFlashInner").addEventListener("click",srFlip);
+  srEl("srFlashInner").addEventListener("click",event=>{if(event.target.closest("[data-speak-example]"))return;srFlip();});
   document.querySelectorAll("[data-sr-rating]").forEach(button=>button.addEventListener("click",e=>{e.stopPropagation();srRate(button.dataset.srRating)}));
   document.querySelectorAll("[data-flash-sr-rating]").forEach(button=>button.addEventListener("click",e=>{e.stopPropagation();rateFlashcard(button.dataset.flashSrRating)}));
   document.querySelectorAll(".nav-btn[data-view='fanki']").forEach(button=>button.addEventListener("click",srStart));
