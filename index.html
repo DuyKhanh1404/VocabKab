@@ -203,6 +203,7 @@ input,select{max-width:100%}
 /* Text-to-Speech additions */
 .speak-btn{display:inline-flex;align-items:center;justify-content:center;min-width:38px;min-height:38px;margin:6px;border:1px solid var(--border);border-radius:10px;background:var(--card);color:var(--text);font-size:18px;vertical-align:middle}
 .speak-btn:hover{background:var(--hover);border-color:var(--primary)}
+.example-speak-btn{min-width:30px;min-height:30px;padding:2px 6px;margin:2px 4px;vertical-align:middle;font-size:15px}
 .speak-word-cell{display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap}
 </style>
 </head>
@@ -453,6 +454,23 @@ function speakEnglishWord(text){
   const voices=window.speechSynthesis.getVoices();
   const usVoice=voices.find(v=>/^en-US$/i.test(v.lang))||voices.find(v=>/^en-US/i.test(v.lang));
   if(usVoice)utterance.voice=usVoice;
+  window.speechSynthesis.speak(utterance);
+}
+function speakEnglishExample(text){
+  const sentence=String(text||"").trim();
+  if(!sentence)return;
+  if(!("speechSynthesis" in window)||!("SpeechSynthesisUtterance" in window)){
+    showMessage("Trình duyệt này chưa hỗ trợ phát âm tự động.","warn");
+    return;
+  }
+  window.speechSynthesis.cancel();
+  const utterance=new SpeechSynthesisUtterance(sentence);
+  utterance.lang="en-US";
+  utterance.rate=0.9;
+  utterance.pitch=1;
+  const voices=window.speechSynthesis.getVoices();
+  const voice=voices.find(v=>/^en-US$/i.test(v.lang))||voices.find(v=>/^en-US/i.test(v.lang))||voices.find(v=>/^en/i.test(v.lang));
+  if(voice)utterance.voice=voice;
   window.speechSynthesis.speak(utterance);
 }
 
@@ -990,7 +1008,7 @@ function renderFlash(){
   const example=$("flashExample");
   if(example){
     const text=String(w.example||"").trim();
-    example.textContent=text;
+    example.innerHTML=text?`${escapeHtml(text)} <button class="speak-btn example-speak-btn" type="button" data-speak-example="${escapeHtml(text)}" aria-label="Phát âm câu ví dụ" title="Phát âm câu ví dụ">🔊</button>`:"";
     example.classList.toggle("hidden",!text);
   }
 
@@ -1265,7 +1283,7 @@ function renderDetail(){
   const f=fileById(activeFileId);if(!f){$("detailTitle").textContent="Chưa chọn file";$("detailBody").innerHTML="";$("deleteWords").disabled=true;return}
   $("detailTitle").textContent="📘 "+f.name;$("detailMeta").textContent=`${f.words.length} từ`;
   const q=norm($("detailSearch").value);const rows=f.words.map((w,i)=>({w,i})).filter(x=>!q||norm(x.w.word||x.w.vocab).includes(q)||norm(x.w.type).includes(q)||norm(x.w.meaning).includes(q)||norm(x.w.example||"").includes(q));
-  $("detailBody").innerHTML=rows.length?rows.map(x=>`<tr data-vk-row="${x.i}" class="${selectedDetail.has(x.i)?"vk-range-selected":""}"><td><input class="checkbox detail-check" data-i="${x.i}" type="checkbox" ${selectedDetail.has(x.i)?"checked":""}></td><td class="vk-stt">${x.i+1}</td><td><span class="speak-word-cell"><b>${escapeHtml(x.w.word||x.w.vocab||"")}</b><button class="speak-btn" type="button" data-speak-word="${escapeHtml(x.w.word||x.w.vocab||"")}" aria-label="Phát âm từ tiếng Anh" title="Phát âm tiếng Anh">🔊</button></span></td><td><span class="badge">${escapeHtml(x.w.type||"")}</span></td><td>${escapeHtml(x.w.meaning||"")}</td><td>${escapeHtml(x.w.example||"")}</td><td><div class="row"><button class="btn secondary" data-edit-word="${x.i}" type="button">✏️ Sửa</button><button class="btn danger" data-one="${x.i}" type="button">Xóa</button></div></td></tr>`).join(""):`<tr><td colspan="7" class="empty">Không có từ phù hợp.</td></tr>`;
+  $("detailBody").innerHTML=rows.length?rows.map(x=>`<tr data-vk-row="${x.i}" class="${selectedDetail.has(x.i)?"vk-range-selected":""}"><td><input class="checkbox detail-check" data-i="${x.i}" type="checkbox" ${selectedDetail.has(x.i)?"checked":""}></td><td class="vk-stt">${x.i+1}</td><td><span class="speak-word-cell"><b>${escapeHtml(x.w.word||x.w.vocab||"")}</b><button class="speak-btn" type="button" data-speak-word="${escapeHtml(x.w.word||x.w.vocab||"")}" aria-label="Phát âm từ tiếng Anh" title="Phát âm tiếng Anh">🔊</button></span></td><td><span class="badge">${escapeHtml(x.w.type||"")}</span></td><td>${escapeHtml(x.w.meaning||"")}</td><td>${x.w.example?`<span class="example-detail-cell">${escapeHtml(x.w.example)} <button class="speak-btn example-speak-btn" type="button" data-speak-example="${escapeHtml(x.w.example)}" aria-label="Phát âm câu ví dụ" title="Phát âm câu ví dụ">🔊</button></span>`:""}</td><td><div class="row"><button class="btn secondary" data-edit-word="${x.i}" type="button">✏️ Sửa</button><button class="btn danger" data-one="${x.i}" type="button">Xóa</button></div></td></tr>`).join(""):`<tr><td colspan="7" class="empty">Không có từ phù hợp.</td></tr>`;
   $("detailBody").querySelectorAll(".detail-check").forEach(c=>c.onchange=()=>{const i=+c.dataset.i;c.checked?selectedDetail.add(i):selectedDetail.delete(i);updateDetailControls()});
   $("detailBody").querySelectorAll("[data-one]").forEach(b=>b.onclick=()=>deleteOneWord(+b.dataset.one));
   $("detailBody").querySelectorAll("[data-edit-word]").forEach(b=>b.onclick=()=>editWord(+b.dataset.editWord));
@@ -1733,11 +1751,11 @@ renderAll();
     return !!s.lastReviewedAt || Number(s.reviewCount)>0 || Number(s.repetition)>0 ||
       (Number.isFinite(Date.parse(s.dueDate)) && Date.parse(s.dueDate)>Date.parse("2000-01-01T00:00:00Z"));
   }
-  function srIsDue(card,now=new Date()){return srHasBeenRated(card)&&Date.parse(card.schedule.dueDate)<=srTodayStart(now)+86400000-1}
+  function srIsDue(card,now=new Date()){return srHasBeenRated(card)&&Date.parse(card.schedule.dueDate)<=srTodayStart(now)}
   function srRenderStats(){const all=srAllCards().filter(srHasBeenRated),due=all.filter(c=>srIsDue(c)).length;srEl("srStats").textContent=`Tổng ${all.length} thẻ đã đánh giá · ${due} thẻ đến hạn`;}
   function srStart(){srState.queue=srAllCards().filter(c=>srHasBeenRated(c)&&srIsDue(c));srState.index=0;srState.session=true;srEl("srArea").classList.toggle("hidden",!srState.queue.length);srEl("srEmpty").classList.toggle("hidden",!!srState.queue.length);if(!srState.queue.length){srEl("srEmpty").textContent="🎉 Hiện không có thẻ đến hạn.";srRenderStats();return}srRenderCard()}
   function srRenderCard(){const item=srState.queue[srState.index];if(!item){srState.session=false;srEl("srArea").classList.add("hidden");srEl("srEmpty").classList.remove("hidden");srEl("srEmpty").textContent="🎉 Đã hoàn thành các thẻ đến hạn hôm nay!";srRenderStats();return}
-    srState.current=item;srEl("srWord").textContent=item.word.word||"";srEl("srType").textContent=item.word.type||"";srEl("srMeaning").textContent=item.word.meaning||"";srEl("srExample").textContent=item.word.example||"";srEl("srExample").classList.toggle("hidden",!String(item.word.example||"").trim());srEl("srFlashInner").classList.remove("flip");srEl("srRatings").classList.add("hidden");
+    srState.current=item;srEl("srWord").textContent=item.word.word||"";srEl("srType").textContent=item.word.type||"";srEl("srMeaning").textContent=item.word.meaning||"";const srExampleText=String(item.word.example||"").trim();srEl("srExample").innerHTML=srExampleText?`${escapeHtml(srExampleText)} <button class="speak-btn example-speak-btn" type="button" data-speak-example="${escapeHtml(srExampleText)}" aria-label="Phát âm câu ví dụ" title="Phát âm câu ví dụ">🔊</button>`:"";srEl("srExample").classList.toggle("hidden",!srExampleText);srEl("srFlashInner").classList.remove("flip");srEl("srRatings").classList.add("hidden");
     srEl("srCounter").textContent=`${srState.index+1} / ${srState.queue.length} · ${item.file.name}`;srEl("srProgress").style.width=`${Math.round(srState.index/srState.queue.length*100)}%`;srEl("srHint").textContent=`Khoảng cách: ${item.schedule.interval||0} ngày · Lịch ôn: ${item.schedule.lastReviewedAt?new Date(item.schedule.dueDate).toLocaleDateString("vi-VN"):"Thẻ mới"}`;srEl("srReviewCount").textContent=`Tổng số lần đã ôn/đánh giá từ này: ${Number(item.schedule.reviewCount)||0}`;
   }
   function srFlip(){const flipped=srEl("srFlashInner").classList.toggle("flip");srEl("srRatings").classList.toggle("hidden",!flipped)}
@@ -1782,6 +1800,13 @@ $("speakSrWord")?.addEventListener("click",event=>{
   speakEnglishWord(match?(match.word||match.vocab):word);
 });
 document.addEventListener("click",event=>{
+  const exampleButton=event.target.closest("[data-speak-example]");
+  if(exampleButton){
+    event.preventDefault();
+    event.stopPropagation();
+    speakEnglishExample(exampleButton.getAttribute("data-speak-example"));
+    return;
+  }
   const button=event.target.closest("[data-speak-word]");
   if(button){
     event.preventDefault();
