@@ -20,6 +20,9 @@
 <title>VocabKab — Vocabulary Learning</title>
 <script src="https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js">
 
+
+
+
 </script>
 <!-- Firebase Compat SDK: dùng chung một kiểu SDK, không trộn ES Module import. -->
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
@@ -205,6 +208,15 @@ input,select{max-width:100%}
 .speak-btn:hover{background:var(--hover);border-color:var(--primary)}
 .example-speak-btn{min-width:30px;min-height:30px;padding:2px 6px;margin:2px 4px;vertical-align:middle;font-size:15px}
 .speak-word-cell{display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap}
+
+
+/* VocabKab: trạng thái đã đọc cho tile file — phần bổ sung độc lập */
+.file-card{position:relative;padding-top:46px}
+.file-card.vk-read-done{background:#dcfce7!important;border:2px solid #16a34a!important;color:#14532d!important;box-shadow:0 0 0 1px rgba(22,163,74,.12)}
+.file-card.vk-read-done .file-meta,.file-card.vk-read-done .muted{color:#166534!important}
+.file-card .vk-read-toggle{position:absolute;top:10px;right:10px;display:inline-flex;align-items:center;gap:5px;padding:5px 8px;min-height:30px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text);font-size:12px;font-weight:700;cursor:pointer;z-index:2}
+.file-card.vk-read-done .vk-read-toggle{background:#16a34a;border-color:#15803d;color:#fff}
+.file-card .vk-read-toggle input{width:15px;height:15px;margin:0;accent-color:#16a34a}
 </style>
 </head>
 <body>
@@ -1835,6 +1847,65 @@ document.addEventListener("click",event=>{
   }
 });
 
+</script>
+
+<script>
+/* === Đánh dấu tile "đã đọc": lưu riêng trong localStorage, không chạm DB/logic học === */
+(function initFileReadMarkers(){
+  "use strict";
+  const STORAGE_KEY="vocabKabFileReadMarkers_v1";
+  let readMarkers={};
+  try{
+    const stored=JSON.parse(localStorage.getItem(STORAGE_KEY)||"{}");
+    if(stored&&typeof stored==="object"&&!Array.isArray(stored))readMarkers=stored;
+  }catch(_){readMarkers={};}
+
+  function getFileId(card){
+    const opener=card.querySelector("[data-open]");
+    if(opener)return opener.getAttribute("data-open");
+    const merge=card.querySelector(".merge-check");
+    if(merge)return merge.value;
+    const detail=card.querySelector("[data-detail]");
+    if(detail)return detail.getAttribute("data-detail");
+    return null;
+  }
+  function decorateCard(card){
+    if(!card||!card.classList.contains("file-card"))return;
+    const id=getFileId(card);
+    if(!id)return;
+    card.classList.toggle("vk-read-done",readMarkers[id]===true);
+    let toggle=card.querySelector(".vk-read-toggle");
+    if(!toggle){
+      toggle=document.createElement("label");
+      toggle.className="vk-read-toggle";
+      toggle.title="Đánh dấu file đã đọc";
+      toggle.innerHTML='<input type="checkbox" aria-label="Đánh dấu đã đọc"><span>Đã đọc</span>';
+      toggle.addEventListener("click",event=>event.stopPropagation());
+      toggle.querySelector("input").addEventListener("change",event=>{
+        event.stopPropagation();
+        const checked=event.currentTarget.checked;
+        readMarkers[id]=checked;
+        try{localStorage.setItem(STORAGE_KEY,JSON.stringify(readMarkers));}
+        catch(_){/* Nếu bộ nhớ bị chặn, vẫn cập nhật trạng thái trong phiên hiện tại. */}
+        card.classList.toggle("vk-read-done",checked);
+        toggle.title=checked?"Đánh dấu là chưa đọc":"Đánh dấu file đã đọc";
+      });
+      card.appendChild(toggle);
+    }
+    const input=toggle.querySelector("input");
+    if(input)input.checked=readMarkers[id]===true;
+    toggle.title=readMarkers[id]===true?"Đánh dấu là chưa đọc":"Đánh dấu file đã đọc";
+  }
+  function scan(){
+    document.querySelectorAll("#fileGrid .file-card,#manageGrid .file-card").forEach(decorateCard);
+  }
+  scan();
+  const observer=new MutationObserver(scan);
+  ["fileGrid","manageGrid"].forEach(id=>{
+    const node=document.getElementById(id);
+    if(node)observer.observe(node,{childList:true,subtree:true});
+  });
+})();
 </script>
 
 </body>
