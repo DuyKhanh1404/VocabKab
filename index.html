@@ -616,8 +616,14 @@ function syncGuardStatus(){
 /* Chỉ khóa cloud write; localStorage vẫn hoạt động bình thường. */
 function scheduleCloudSync(){
   if(syncGuard.autoSaveLocked)return;
-  if(!cloud.enabled||!cloud.ready||!cloud.user||cloud.syncing)return;
+  if(!cloud.enabled||!cloud.ready||!cloud.user)return;
   clearTimeout(cloudTimer);
+  /* Nếu có một lượt ghi đang chạy, vẫn xếp lịch thử lại để không làm rơi
+     thay đổi Fanki/dấu đã đọc phát sinh trong lúc chờ transaction. */
+  if(cloud.syncing){
+    cloudTimer=setTimeout(()=>scheduleCloudSync(),600);
+    return;
+  }
   cloudTimer=setTimeout(()=>syncToCloud(),450);
 }
 
@@ -650,6 +656,8 @@ function applyGlobalSyncData(data){
       try{if(typeof data[key]==="string")localStorage.setItem(key,data[key]);else localStorage.setItem(key,JSON.stringify(data[key]));}catch(e){console.warn("Không áp dụng được dữ liệu cloud:",key,e)}
     }
   });
+  /* Báo cho các tính năng có cache trong bộ nhớ nạp lại dữ liệu vừa tải từ cloud. */
+  try{window.dispatchEvent(new CustomEvent("vocabkab:global-sync-data-applied"));}catch(_){}
 }
 function localDataPayload(){
   return {
@@ -1892,9 +1900,16 @@ document.addEventListener("click",event=>{
     if(input)input.checked=readMarkers[id]===true;
     toggle.title=readMarkers[id]===true?"Đánh dấu là chưa đọc":"Đánh dấu file đã đọc";
   }
+  function reloadReadMarkers(){
+    try{
+      const stored=JSON.parse(localStorage.getItem(STORAGE_KEY)||"{}");
+      readMarkers=stored&&typeof stored==="object"&&!Array.isArray(stored)?stored:{};
+    }catch(_){readMarkers={};}
+  }
   function scan(){
     document.querySelectorAll("#fileGrid .file-card,#manageGrid .file-card").forEach(decorateCard);
   }
+  window.addEventListener("vocabkab:global-sync-data-applied",()=>{reloadReadMarkers();scan();});
   scan();
   const observer=new MutationObserver(scan);
   ["fileGrid","manageGrid"].forEach(id=>{
