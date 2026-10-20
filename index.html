@@ -634,15 +634,31 @@ function updateAuthUI(user){
 function firebaseConfigured(){return !!(window.FIREBASE_CONFIG&&window.FIREBASE_CONFIG.apiKey&&window.FIREBASE_CONFIG.projectId)}
 function cloudDataRef(){return cloud.db.collection("users").doc(cloud.user.uid).collection("vocab_data").doc("main")}
 
+/* Các khóa thuộc dữ liệu ứng dụng ngoài DB/progress/theme cũng phải đi cùng tài khoản. */
+const GLOBAL_SYNC_KEYS=[SETTINGS_KEY,"vocabKabSpacedRepetition_v1","vocabKabFileReadMarkers_v1"];
+function readGlobalSyncData(){
+  const result={};
+  GLOBAL_SYNC_KEYS.forEach(key=>{
+    try{const value=localStorage.getItem(key);if(value!==null)result[key]=value;}catch(e){console.warn("Không đọc được dữ liệu local:",key,e)}
+  });
+  return result;
+}
+function applyGlobalSyncData(data){
+  if(!data||typeof data!=="object")return;
+  GLOBAL_SYNC_KEYS.forEach(key=>{
+    if(Object.prototype.hasOwnProperty.call(data,key)){
+      try{if(typeof data[key]==="string")localStorage.setItem(key,data[key]);else localStorage.setItem(key,JSON.stringify(data[key]));}catch(e){console.warn("Không áp dụng được dữ liệu cloud:",key,e)}
+    }
+  });
+}
 function localDataPayload(){
   return {
     files:Array.isArray(db.files)?db.files:[],
     folders:Array.isArray(db.folders)?db.folders:[],
     progress:(progressStore&&typeof progressStore==="object")?progressStore:{},
     theme:localStorage.getItem(THEME_KEY)||"purple",
-    schemaVersion:4,
-    /* Không dùng serverTimestamp cho phiên bản nữa.
-       Dùng timestamp thực của lần thay đổi local để so sánh giữa thiết bị. */
+    appData:readGlobalSyncData(),
+    schemaVersion:5,
     updatedAt:new Date(Math.max(Date.now(),syncGuard.localRevision||0)).toISOString()
   };
 }
@@ -653,6 +669,7 @@ function applyCloudPayload(data){
   if(Array.isArray(data.folders))db.folders=data.folders;
   if(data.progress&&typeof data.progress==="object")progressStore=data.progress;
   if(data.theme){localStorage.setItem(THEME_KEY,data.theme);applyTheme(data.theme,false)}
+  applyGlobalSyncData(data.appData);
   localStorage.setItem(DB_KEY,JSON.stringify(db));
   localStorage.setItem(PROGRESS_KEY,JSON.stringify(progressStore));
   renderAll();
@@ -806,56 +823,36 @@ async function prepareCloudForUser(user){
   cloud.user=user;
   cloud.ready=false;
   syncGuard.autoSaveLocked=true;
-  syncGuardReadRevision();
-
   if(cloud.unsubscribe){cloud.unsubscribe();cloud.unsubscribe=null}
   updateAuthUI(user);
 
   try{
-    setAuthStatus("Đang kiểm tra phiên bản dữ liệu…");
+    setAuthStatus("Đang tải dữ liệu mới nhất từ cloud…");
     const ref=cloudDataRef();
     const snap=await ref.get();
+    if(!cloud.user||cloud.user.uid!==user.uid)return;
 
     if(snap.exists&&snap.data()){
       const remoteData=snap.data()||{};
       const remoteRevision=syncGuardRevisionFromCloud(remoteData);
-      const localRevision=syncGuard.localRevision||0;
-
-      if(syncGuardIsNewer(remoteRevision,localRevision)){
-        /* Cloud mới hơn → tải cloud xuống local, tuyệt đối không ghi local cũ lên cloud. */
-        applyCloudPayload(remoteData);
-        syncGuard.localRevision=remoteRevision;
-        syncGuard.lastRemoteRevision=remoteRevision;
-        syncGuardWriteRevision();
-        setAuthStatus("Đã nhận dữ liệu mới nhất từ cloud","online");
-      }else if(localRevision>remoteRevision){
-        /* Local mới hơn → chưa mở khóa auto-save; ghi local qua transaction. */
-        syncGuard.localRevision=localRevision;
-        syncGuard.lastRemoteRevision=remoteRevision;
-        cloud.ready=true;
-        setAuthStatus("Thiết bị này có dữ liệu mới hơn — đang bảo vệ và tải lên…");
-        await syncToCloud(true);
-      }else{
-        syncGuard.lastRemoteRevision=remoteRevision;
-        syncGuard.localRevision=remoteRevision;
-        syncGuardWriteRevision();
-        applyCloudPayload(remoteData);
-        setAuthStatus("Dữ liệu đã khớp","online");
-      }
+      /* Khi đăng nhập, cloud là nguồn dữ liệu chuẩn. Không dùng revision local
+         của trình duyệt khác để kết luận rằng dữ liệu local cũ hơn/mới hơn. */
+      applyCloudPayload(remoteData);
+      syncGuard.localRevision=remoteRevision||Date.now();
+      syncGuard.lastRemoteRevision=remoteRevision;
+      syncGuardWriteRevision();
+      setAuthStatus("Đã tải dữ liệu tài khoản từ cloud","online");
     }else{
-      /* Cloud chưa có dữ liệu: cho phép tạo bản đầu tiên từ local. */
-      if(!syncGuard.localRevision)syncGuardTouchLocal();
+      /* Tài khoản chưa có document cloud: tạo bản đầu tiên từ dữ liệu hiện có. */
+      syncGuard.localRevision=Math.max(Date.now(),syncGuard.localRevision||0);
+      syncGuard.lastRemoteRevision=0;
       syncGuard.autoSaveLocked=false;
       cloud.ready=true;
-      await syncToCloud();
-      syncGuard.autoSaveLocked=false;
-      setAuthStatus("Đã tạo dữ liệu đồng bộ","online");
+      await syncToCloud(true);
     }
 
     cloud.ready=true;
     startCloudListener();
-
-    /* Chỉ tại đây mới mở khóa auto-save/ghi đè. */
     syncGuard.autoSaveLocked=false;
     syncGuard.initialized=true;
     syncGuardWriteRevision();
@@ -868,7 +865,6 @@ async function prepareCloudForUser(user){
     showMessage("Không thể tải dữ liệu cloud. Auto-save cloud đã bị khóa để tránh ghi đè dữ liệu.","warn");
   }
 }
-
 async function initCloud(){
   updateAuthUI(null);
   syncGuardReadRevision();
@@ -1742,7 +1738,7 @@ renderAll();
   const srState={queue:[],index:0,current:null,session:false};
   const srEl=id=>document.getElementById(id);
   function srLoad(){try{const d=JSON.parse(localStorage.getItem(SR_KEY)||"{}");return d&&typeof d==="object"?d:{}}catch{return {}}}
-  function srSave(data){localStorage.setItem(SR_KEY,JSON.stringify(data))}
+  function srSave(data){localStorage.setItem(SR_KEY,JSON.stringify(data));if(typeof syncGuard!=="undefined")syncGuardTouchLocal();scheduleCloudSync()}
   function srKey(fileId,wordId){return String(fileId)+"::"+String(wordId)}
   function srTodayStart(date=new Date()){return new Date(date.getFullYear(),date.getMonth(),date.getDate()).getTime()}
   function srDueDate(days,from=new Date()){const d=new Date(from.getFullYear(),from.getMonth(),from.getDate());d.setDate(d.getDate()+Math.max(1,days));return d.toISOString()}
@@ -1885,7 +1881,7 @@ document.addEventListener("click",event=>{
         event.stopPropagation();
         const checked=event.currentTarget.checked;
         readMarkers[id]=checked;
-        try{localStorage.setItem(STORAGE_KEY,JSON.stringify(readMarkers));}
+        try{localStorage.setItem(STORAGE_KEY,JSON.stringify(readMarkers));if(typeof syncGuard!=="undefined")syncGuardTouchLocal();if(typeof scheduleCloudSync==="function")scheduleCloudSync();}
         catch(_){/* Nếu bộ nhớ bị chặn, vẫn cập nhật trạng thái trong phiên hiện tại. */}
         card.classList.toggle("vk-read-done",checked);
         toggle.title=checked?"Đánh dấu là chưa đọc":"Đánh dấu file đã đọc";
