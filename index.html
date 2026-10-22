@@ -1614,14 +1614,63 @@ renderAll();
   let readingFileId=null;
   function readingTerms(file){
     const terms=[];
-    (file.words||[]).forEach(w=>{
+    const add=(text,lang,wordId)=>{
+      const value=String(text||'').trim();
+      if(!value)return;
+      // Treat alternative glosses as separate candidates without changing stored vocabulary data.
+      const variants=[value];
+      if(lang==='vi'){
+        value.split(/[;,|/]+/).forEach(part=>variants.push(part.trim()));
+        value.replace(/\([^)]*\)|\[[^\]]*\]/g,' ').split(/\s+(?:hoặc|hay|cũng như)\s+/i).forEach(part=>variants.push(part.trim()));
+      }else{
+        // Common inflections: recognize a word form in reading text while retaining
+        // the original vocabulary entry as the semantic link.
+        const lower=value.toLocaleLowerCase();
+        if(/^[a-z][a-z'-]*$/i.test(value)){
+          if(lower.endsWith('ies')&&lower.length>4)variants.push(value.slice(0,-3)+'y');
+          if(lower.endsWith('ied')&&lower.length>4)variants.push(value.slice(0,-3)+'y');
+          if(lower.endsWith('ing')&&lower.length>5){
+            variants.push(value.slice(0,-3),value.slice(0,-3)+'e');
+          }
+          if(lower.endsWith('ed')&&lower.length>4)variants.push(value.slice(0,-2),value.slice(0,-1));
+          if(lower.endsWith('es')&&lower.length>4)variants.push(value.slice(0,-2),value.slice(0,-1));
+          if(lower.endsWith('s')&&!lower.endsWith('ss')&&lower.length>3)variants.push(value.slice(0,-1));
+        }
+      }
+      [...new Set(variants.map(x=>String(x||'').trim()).filter(x=>x.length>=2))]
+        .forEach(variant=>terms.push({text:variant,lang,wordId,canonical:value}));
+    };
+    (file.words||[]).forEach((w,index)=>{
+      const id=String(w.id||w.word||w.vocab||index);
       const en=String(w.word||w.vocab||'').trim();
       const vi=String(w.meaning||'').trim();
-      if(en)terms.push({text:en,lang:'en'});
-      if(vi)terms.push({text:vi,lang:'vi'});
+      if(en)add(en,'en',id);
+      if(vi)add(vi,'vi',id);
+      // Small offline bilingual alias set for frequent translation equivalents.
+      // These are matching hints only; the user's saved vocabulary is not modified.
+      const semanticAliases={
+        substantially:['đáng kể','một cách đáng kể','đáng kể về mặt','nhiều','phần lớn'],
+        substantial:['đáng kể','đáng kể về mặt','lớn','quan trọng'],
+        significantly:['đáng kể','một cách đáng kể','đáng kể hơn','đáng kể về mặt'],
+        significant:['đáng kể','quan trọng','đáng chú ý'],
+        considerably:['đáng kể','một cách đáng kể','nhiều hơn'],
+        considerable:['đáng kể','đáng chú ý','đáng kể về số lượng'],
+        rapidly:['nhanh chóng','nhanh'],
+        rapidly:['nhanh chóng','nhanh'],
+        gradually:['dần dần','từ từ'],
+        primarily:['chủ yếu','phần lớn'],
+        mainly:['chủ yếu','phần lớn'],
+        approximately:['xấp xỉ','khoảng'],
+        approximately:['xấp xỉ','khoảng'],
+        decrease:['giảm','sự giảm'],
+        increase:['tăng','sự tăng'],
+        improve:['cải thiện','nâng cao'],
+        impact:['tác động','ảnh hưởng']
+      };
+      (semanticAliases[en.toLocaleLowerCase()]||[]).forEach(alias=>terms.push({text:alias,lang:'vi',wordId:id,canonical:vi||en,semanticAlias:true}));
     });
-    // Longest phrase wins. If an English term and Vietnamese meaning are identical,
-    // keep one occurrence so it is not double-counted.
+    // Prefer longer expressions. For duplicate text, Vietnamese gloss takes precedence
+    // only when no English term has the same spelling.
     const unique=new Map();
     terms.sort((a,b)=>b.text.length-a.text.length);
     terms.forEach(t=>{
@@ -1644,16 +1693,17 @@ renderAll();
     const matched=new Set();
     let m;
     while((m=re.exec(source))!==null){
-      // Fallback regex captures the preceding boundary separately; preserve it outside <mark>.
       const fallback=re.source.startsWith('(^|');
-      const full=fallback?m[0]:m[0];
       const value=fallback?(m[2]||''):m[1];
       const index=fallback?m.index+(m[1]||'').length:m.index;
       if(!value){re.lastIndex++;continue}
+      // Longest-first matching prevents nested terms from being marked twice.
+      if(index<last)continue;
       out+=escapeHtml(source.slice(last,index));
       const term=lookup.get(value.toLocaleLowerCase());
       const cls=term&&term.lang==='vi'?'reading-vi':'reading-en';
-      out+='<mark class="'+cls+'" title="'+(cls==='reading-vi'?'Nghĩa tiếng Việt':'Từ vựng tiếng Anh')+'">'+escapeHtml(value)+'</mark>';
+      const title=term?(cls==='reading-vi'?'Nghĩa tiếng Việt':'Từ vựng tiếng Anh'):'Từ vựng';
+      out+='<mark class="'+cls+'" title="'+title+'">'+escapeHtml(value)+'</mark>';
       last=index+value.length;count++;matched.add(value.toLocaleLowerCase());
     }
     out+=escapeHtml(source.slice(last));
